@@ -35,6 +35,32 @@ const optionalUrlSchema = z
 		message: "Must be a valid http:// or https:// URL",
 	});
 
+const optionalNonEmptyStringSchema = z
+	.string()
+	.optional()
+	.transform((value) => {
+		const trimmed = value?.trim();
+		return trimmed ? trimmed : undefined;
+	});
+
+const booleanEnvSchema = (defaultValue: boolean) =>
+	z
+		.preprocess((value) => {
+			if (typeof value === "boolean") {
+				return value;
+			}
+			if (typeof value === "string") {
+				const normalized = value.trim().toLowerCase();
+				if (normalized === "true" || normalized === "1") {
+					return true;
+				}
+				if (normalized === "false" || normalized === "0") {
+					return false;
+				}
+			}
+		}, z.boolean().optional())
+		.transform((value) => value ?? defaultValue);
+
 function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 	return z
 		.object({
@@ -84,6 +110,7 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 					}
 				),
 			TRUSTED_PROXY_CIDRS: z.string().default(""),
+			DISABLE_SIGNUP: booleanEnvSchema(false),
 			GOOGLE_CLIENT_ID: z.string().default(""),
 			GOOGLE_CLIENT_SECRET: z.string().default(""),
 			S3_BUCKET: z.string().min(1).default(APP_CONFIG.defaultBucketName),
@@ -98,11 +125,27 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 				.default("redis://localhost:6379"),
 			REDIS_PREFIX: z.string().min(1).default(APP_CONFIG.defaultRedisPrefix),
 			// AI provider keys (Mastra reads these from process.env; listed here for validation & preflight checks)
-			GOOGLE_GENERATIVE_AI_API_KEY: z.string().trim().min(1).optional(),
-			GOOGLE_API_KEY: z.string().trim().min(1).optional(),
-			OPENAI_API_KEY: z.string().trim().min(1).optional(),
-			ANTHROPIC_API_KEY: z.string().trim().min(1).optional(),
-			OPENROUTER_API_KEY: z.string().trim().min(1).optional(),
+			GOOGLE_GENERATIVE_AI_API_KEY: optionalNonEmptyStringSchema,
+			GOOGLE_API_KEY: optionalNonEmptyStringSchema,
+			OPENAI_API_KEY: optionalNonEmptyStringSchema,
+			ANTHROPIC_API_KEY: optionalNonEmptyStringSchema,
+			OPENROUTER_API_KEY: optionalNonEmptyStringSchema,
+			SDR_MODEL_FAST: z
+				.string()
+				.trim()
+				.default("openrouter/google/gemini-2.5-flash"),
+			SDR_MODEL_SMART: z
+				.string()
+				.trim()
+				.default("openrouter/anthropic/claude-sonnet-4.5"),
+			OUTBOUND_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
+			SANDBOX_RECIPIENT_EMAIL: z.string().trim().default(""),
+			INBOUND_EMAIL_DOMAIN: z.string().trim().default("inbox.ledgerwise.demo"),
+			EXA_API_KEY: z.string().trim().default(""),
+			CALCOM_API_KEY: z.string().trim().default(""),
+			CALCOM_EVENT_TYPE_ID: z.string().trim().default(""),
+			RESEND_WEBHOOK_SECRET: z.string().trim().default(""),
+			CALCOM_WEBHOOK_SECRET: z.string().trim().default(""),
 			MASTRA_DB_SCHEMA: z.string().trim().min(1).default("mastra"),
 			MASTRA_DEFAULT_MODEL: z
 				.string()
@@ -140,6 +183,18 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 				});
 			}
 
+			if (
+				Boolean(data.S3_ACCESS_KEY_ID.trim()) !==
+				Boolean(data.S3_SECRET_ACCESS_KEY.trim())
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message:
+						"S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must both be set when configuring S3 object storage.",
+					path: ["S3_ACCESS_KEY_ID"],
+				});
+			}
+
 			if (data.NODE_ENV !== "production") {
 				return;
 			}
@@ -158,8 +213,6 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 				"REDIS_URL",
 				"BETTER_AUTH_URL",
 				"CORS_ORIGIN",
-				"S3_ACCESS_KEY_ID",
-				"S3_SECRET_ACCESS_KEY",
 			] as const;
 
 			for (const key of requiredInProd) {

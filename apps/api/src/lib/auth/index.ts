@@ -125,6 +125,7 @@ export const auth = betterAuth({
 		before: orgLifecycle.before,
 	},
 	emailAndPassword: {
+		disableSignUp: env.DISABLE_SIGNUP,
 		enabled: true,
 		requireEmailVerification: true,
 		revokeSessionsOnPasswordReset: true,
@@ -167,6 +168,7 @@ export const auth = betterAuth({
 			},
 		}),
 		emailOTP({
+			disableSignUp: env.DISABLE_SIGNUP,
 			sendVerificationOnSignUp: true,
 			storeOTP: "hashed",
 			async sendVerificationOTP({ email, otp, type }) {
