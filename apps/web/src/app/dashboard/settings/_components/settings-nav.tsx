@@ -4,6 +4,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import {
 	AlertTriangle,
 	Bell,
+	BookOpen,
 	Building,
 	LayoutGrid,
 	ShieldCheck,
@@ -17,6 +18,11 @@ const navItems = [
 		href: "/dashboard/settings",
 		icon: LayoutGrid,
 		label: "Overview",
+	},
+	{
+		href: "/dashboard/settings/playbook",
+		icon: BookOpen,
+		label: "SDR Playbook",
 	},
 	{
 		href: "/dashboard/settings/general",

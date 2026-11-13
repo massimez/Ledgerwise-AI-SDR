@@ -1,6 +1,7 @@
 import {
 	AlertTriangle,
 	Bell,
+	BookOpen,
 	Building2,
 	ShieldCheck,
 	Users,
@@ -8,6 +9,14 @@ import {
 import { DashboardTile } from "../_components/dashboard-tile";
 
 const settingsCategories = [
+	{
+		badge: "AI SDR",
+		description:
+			"Edit Ledgerwise bookkeeping services, FAQ, objection handling, autopilot mode, and bot disclosure policy.",
+		href: "/dashboard/settings/playbook",
+		icon: BookOpen,
+		title: "SDR Playbook & Guardrails",
+	},
 	{
 		badge: "Core",
 		description:
