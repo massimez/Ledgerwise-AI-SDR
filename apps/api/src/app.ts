@@ -5,7 +5,9 @@ import { authRoutes } from "./modules/auth/route";
 import { healthRoutes } from "./modules/health/route";
 import { notificationRoutes } from "./modules/notification/route";
 import { organizationRoutes } from "./modules/organization/route";
+import { sdrRoutes } from "./modules/sdr/route";
 import { storageRoutes } from "./modules/storage/route";
+import { webhookRoutes } from "./modules/webhooks/route";
 
 export const app = createApp()
 	.use("*", auditMiddleware)
@@ -13,6 +15,8 @@ export const app = createApp()
 	.route("/health", healthRoutes)
 	.route("/auth", authRoutes)
 	.route("/ai", aiRoutes)
+	.route("/sdr", sdrRoutes)
+	.route("/webhooks", webhookRoutes)
 	.route("/organizations", organizationRoutes)
 	.route("/storage", storageRoutes)
 	.route("/notifications", notificationRoutes);

@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const EMAIL_QUEUE_NAME = "email-queue";
 export const NOTIFICATION_QUEUE_NAME = "notification-queue";
+export const SDR_PIPELINE_QUEUE_NAME = "sdr-pipeline-queue";
+export const SDR_OUTBOUND_QUEUE_NAME = "sdr-outbound-queue";
+export const SDR_INBOUND_QUEUE_NAME = "sdr-inbound-queue";
 
 export const NOTIFICATION_CATEGORIES = [
 	"system",
@@ -106,6 +109,55 @@ export const notificationJobDataSchema = z.object({
 });
 
 export type NotificationJobData = z.infer<typeof notificationJobDataSchema>;
+
+export const sdrDiscoverBatchJobSchema = z.object({
+	action: z.literal("discover-batch"),
+	organizationId: z.string().trim().min(1),
+	researchRunId: z.string().uuid(),
+	startedByUserId: z.string().trim().min(1).optional(),
+	targetCount: z.number().int().min(1).max(60).default(30),
+});
+
+export const sdrResearchCompanyJobSchema = z.object({
+	action: z.literal("research-company"),
+	companyId: z.string().uuid(),
+	organizationId: z.string().trim().min(1),
+	researchRunId: z.string().uuid().optional(),
+});
+
+export const sdrRegenerateDraftJobSchema = z.object({
+	action: z.literal("regenerate-draft"),
+	companyId: z.string().uuid(),
+	instruction: z.string().trim().max(500).optional(),
+	messageId: z.string().uuid().optional(),
+	organizationId: z.string().trim().min(1),
+	requestedByUserId: z.string().trim().min(1).optional(),
+});
+
+export const sdrPipelineJobDataSchema = z.discriminatedUnion("action", [
+	sdrDiscoverBatchJobSchema,
+	sdrResearchCompanyJobSchema,
+	sdrRegenerateDraftJobSchema,
+]);
+
+export type SdrPipelineJobData = z.infer<typeof sdrPipelineJobDataSchema>;
+
+export const sdrOutboundJobDataSchema = z.object({
+	messageId: z.string().uuid(),
+	organizationId: z.string().trim().min(1),
+	threadId: z.string().uuid(),
+});
+
+export type SdrOutboundJobData = z.infer<typeof sdrOutboundJobDataSchema>;
+
+export const sdrInboundJobDataSchema = z.object({
+	inboundMessageId: z.string().uuid(),
+	organizationId: z.string().trim().min(1),
+	source: z.enum(["webhook", "simulator"]).default("simulator"),
+	threadId: z.string().uuid(),
+});
+
+export type SdrInboundJobData = z.infer<typeof sdrInboundJobDataSchema>;
 
 export interface ParsedRedisConnectionOptions {
 	db: number;
