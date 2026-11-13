@@ -13,9 +13,12 @@ const emailAddressSchema = z.string().trim().email();
 const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 422]);
 
 export interface SendEmailOptions {
+	allowSimulator?: boolean;
+	headers?: Record<string, string>;
 	html: string;
 	idempotencyKey?: string;
 	redactBodyInLogs?: boolean;
+	replyTo?: string;
 	subject: string;
 	text?: string;
 	to: string;
@@ -53,6 +56,10 @@ export async function sendEmail(options: SendEmailOptions): Promise<{
 				subject,
 				text: plainText,
 				to: [emailCheck.data],
+				...(options.replyTo
+					? { reply_to: sanitizeHeaderValue(options.replyTo) }
+					: {}),
+				...(options.headers ? { headers: options.headers } : {}),
 			}),
 			headers: {
 				Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -83,7 +90,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<{
 		return { messageId: data.id, simulated: false };
 	}
 
-	if (env.NODE_ENV === "production") {
+	if (env.NODE_ENV === "production" && !options.allowSimulator) {
 		throw new UnrecoverableError(
 			"RESEND_API_KEY is not configured in production"
 		);

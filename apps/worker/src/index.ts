@@ -1,3 +1,8 @@
+import type {
+	SdrInboundJobData,
+	SdrOutboundJobData,
+	SdrPipelineJobData,
+} from "@workspace/api/queues";
 import { closeDb, db } from "@workspace/db";
 import type { Worker } from "bullmq";
 import { sql } from "drizzle-orm";
@@ -8,6 +13,7 @@ import {
 	createWorker,
 	pingWorkerRedis,
 } from "./lib/redis";
+import { closeWorkerSdrQueues } from "./lib/sdr-queues";
 import {
 	EMAIL_QUEUE_NAME,
 	type EmailJobData,
@@ -18,6 +24,18 @@ import {
 	type NotificationJobData,
 	processNotificationJob,
 } from "./processors/notification";
+import {
+	processSdrInboundJob,
+	SDR_INBOUND_QUEUE_NAME,
+} from "./processors/sdr/inbound";
+import {
+	processSdrOutboundJob,
+	SDR_OUTBOUND_QUEUE_NAME,
+} from "./processors/sdr/outbound";
+import {
+	processSdrPipelineJob,
+	SDR_PIPELINE_QUEUE_NAME,
+} from "./processors/sdr/pipeline";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 const READINESS_TIMEOUT_MS = 3000;
@@ -25,6 +43,7 @@ const READINESS_TIMEOUT_MS = 3000;
 logInfo("WorkerService", "Booting BullMQ workers", {
 	concurrency: env.WORKER_CONCURRENCY,
 	env: env.NODE_ENV,
+	outboundMode: env.OUTBOUND_MODE,
 });
 
 const emailWorker = createWorker<EmailJobData>(
@@ -34,6 +53,21 @@ const emailWorker = createWorker<EmailJobData>(
 const notificationWorker = createWorker<NotificationJobData>(
 	NOTIFICATION_QUEUE_NAME,
 	processNotificationJob
+);
+const sdrPipelineWorker = createWorker<SdrPipelineJobData>(
+	SDR_PIPELINE_QUEUE_NAME,
+	processSdrPipelineJob,
+	{ concurrency: Math.min(3, env.WORKER_CONCURRENCY) }
+);
+const sdrOutboundWorker = createWorker<SdrOutboundJobData>(
+	SDR_OUTBOUND_QUEUE_NAME,
+	processSdrOutboundJob,
+	{ concurrency: 2 }
+);
+const sdrInboundWorker = createWorker<SdrInboundJobData>(
+	SDR_INBOUND_QUEUE_NAME,
+	processSdrInboundJob,
+	{ concurrency: Math.min(3, env.WORKER_CONCURRENCY) }
 );
 
 function attachWorkerListeners(label: string, worker: Worker): void {
@@ -63,9 +97,18 @@ function attachWorkerListeners(label: string, worker: Worker): void {
 
 attachWorkerListeners("EmailWorker", emailWorker);
 attachWorkerListeners("NotificationWorker", notificationWorker);
+attachWorkerListeners("SdrPipelineWorker", sdrPipelineWorker);
+attachWorkerListeners("SdrOutboundWorker", sdrOutboundWorker);
+attachWorkerListeners("SdrInboundWorker", sdrInboundWorker);
 
 logInfo("WorkerService", "Workers registered", {
-	queues: [emailWorker.name, notificationWorker.name],
+	queues: [
+		emailWorker.name,
+		notificationWorker.name,
+		sdrPipelineWorker.name,
+		sdrOutboundWorker.name,
+		sdrInboundWorker.name,
+	],
 });
 
 let isShuttingDown = false;
@@ -108,6 +151,9 @@ const healthServer =
 								workers: {
 									email: emailWorker.isRunning(),
 									notification: notificationWorker.isRunning(),
+									sdrInbound: sdrInboundWorker.isRunning(),
+									sdrOutbound: sdrOutboundWorker.isRunning(),
+									sdrPipeline: sdrPipelineWorker.isRunning(),
 								},
 							},
 							{ status: isShuttingDown ? 503 : 200 }
@@ -204,7 +250,14 @@ async function shutdown(signal: string): Promise<void> {
 
 	try {
 		healthServer?.stop(true);
-		await Promise.all([emailWorker.close(), notificationWorker.close()]);
+		await Promise.all([
+			emailWorker.close(),
+			notificationWorker.close(),
+			sdrPipelineWorker.close(),
+			sdrOutboundWorker.close(),
+			sdrInboundWorker.close(),
+		]);
+		await closeWorkerSdrQueues();
 		await closeWorkerHealthRedis();
 		await closeDb();
 		clearTimeout(forceExitTimer);
