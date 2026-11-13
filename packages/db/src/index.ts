@@ -135,3 +135,5 @@ export async function closeDb(): Promise<void> {
 		}
 	}
 }
+
+export * from "./seed-data";
