@@ -33,16 +33,49 @@ describe("API environment validation", () => {
 		expect(parsed.TRUSTED_PROXY_CIDRS_LIST).toEqual([]);
 	});
 
-	test("rejects partial Google OAuth configuration", () => {
+	test("normalizes empty optional AI keys and parses DISABLE_SIGNUP", () => {
+		const parsed = parseApiEnv({
+			ANTHROPIC_API_KEY: "",
+			DISABLE_SIGNUP: "true",
+			GOOGLE_API_KEY: "   ",
+			GOOGLE_GENERATIVE_AI_API_KEY: "",
+			NODE_ENV: "development",
+			OPENAI_API_KEY: "",
+			OPENROUTER_API_KEY: "sk-or-v1-test",
+		});
+		expect(parsed.GOOGLE_GENERATIVE_AI_API_KEY).toBeUndefined();
+		expect(parsed.GOOGLE_API_KEY).toBeUndefined();
+		expect(parsed.OPENAI_API_KEY).toBeUndefined();
+		expect(parsed.ANTHROPIC_API_KEY).toBeUndefined();
+		expect(parsed.OPENROUTER_API_KEY).toBe("sk-or-v1-test");
+		expect(parsed.DISABLE_SIGNUP).toBe(true);
+	});
+
+	test("rejects partial Google OAuth or partial S3 configuration", () => {
 		expect(() =>
 			parseApiEnv({
 				GOOGLE_CLIENT_ID: "only-client-id",
 				NODE_ENV: "development",
 			})
 		).toThrow("Invalid API environment variables");
+
+		expect(() =>
+			parseApiEnv({
+				NODE_ENV: "development",
+				S3_ACCESS_KEY_ID: "only-access-key",
+				S3_SECRET_ACCESS_KEY: "",
+			})
+		).toThrow("Invalid API environment variables");
 	});
 
-	test("rejects production startup with default secret or missing S3/DB/Redis", () => {
+	test("allows production startup without S3 credentials when both are omitted, but rejects default secret or missing DB/Redis", () => {
+		const parsedWithoutS3 = parseApiEnv({
+			...VALID_PROD_ENV,
+			S3_ACCESS_KEY_ID: "",
+			S3_SECRET_ACCESS_KEY: "",
+		});
+		expect(parsedWithoutS3.S3_ACCESS_KEY_ID).toBe("");
+
 		expect(() =>
 			parseApiEnv({
 				...VALID_PROD_ENV,
@@ -54,7 +87,7 @@ describe("API environment validation", () => {
 		expect(() =>
 			parseApiEnv({
 				...VALID_PROD_ENV,
-				S3_ACCESS_KEY_ID: "",
+				DATABASE_URL: "",
 			})
 		).toThrow("Invalid API environment variables");
 	});

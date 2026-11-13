@@ -46,5 +46,16 @@ describe("database connection builder and schema exports", () => {
 		expect(schema.notification).toBeDefined();
 		expect(schema.notificationPreference).toBeDefined();
 		expect(schema.pushSubscription).toBeDefined();
+		expect(schema.sdrSettings).toBeDefined();
+		expect(schema.researchRuns).toBeDefined();
+		expect(schema.companies).toBeDefined();
+		expect(schema.evidence).toBeDefined();
+		expect(schema.qualificationCriteria).toBeDefined();
+		expect(schema.contacts).toBeDefined();
+		expect(schema.threads).toBeDefined();
+		expect(schema.messages).toBeDefined();
+		expect(schema.agentRuns).toBeDefined();
+		expect(schema.suppressions).toBeDefined();
+		expect(schema.meetings).toBeDefined();
 	});
 });

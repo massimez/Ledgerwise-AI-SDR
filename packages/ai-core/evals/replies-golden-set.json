@@ -1,0 +1,336 @@
+[
+  {
+    "id": "opt-01",
+    "category": "opt_out",
+    "inboundBody": "Unsubscribe please.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-02",
+    "category": "opt_out",
+    "inboundBody": "Not interested, thanks.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-03",
+    "category": "opt_out",
+    "inboundBody": "Please take me off your list and do not contact me again.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-04",
+    "category": "opt_out",
+    "inboundBody": "No thanks, appreciate you reaching out though.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-05",
+    "category": "opt_out",
+    "inboundBody": "Stop emailing me please.\n\nOn Tue, Nov 11, 2026 at 9:15 AM Dana wrote:\n> Quick question on Shopify payouts...",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-06",
+    "category": "opt_out",
+    "inboundBody": "We'll pass for now, please don't follow up.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-07",
+    "category": "opt_out",
+    "inboundBody": "Remove us from future outreach immediately.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-08",
+    "category": "opt_out",
+    "inboundBody": "We are not a good fit right now — please opt out this address.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-09",
+    "category": "opt_out",
+    "inboundBody": "No longer interested, thanks anyway.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "opt-10",
+    "category": "opt_out",
+    "inboundBody": "Don't reach out to this inbox again.",
+    "expectedAction": "opt_out_halt",
+    "expectOptOut": true
+  },
+  {
+    "id": "bot-01",
+    "category": "bot_question",
+    "inboundBody": "Before we chat, are you an AI or a human?",
+    "expectedAction": "auto_send_reply",
+    "expectAsksIfBot": true
+  },
+  {
+    "id": "bot-02",
+    "category": "bot_question",
+    "inboundBody": "Quick question — is this a bot or an actual person?",
+    "expectedAction": "auto_send_reply",
+    "expectAsksIfBot": true
+  },
+  {
+    "id": "bot-03",
+    "category": "bot_question",
+    "inboundBody": "Am I emailing a bot right now?",
+    "expectedAction": "auto_send_reply",
+    "expectAsksIfBot": true
+  },
+  {
+    "id": "bot-04",
+    "category": "bot_question",
+    "inboundBody": "Are you a real person, and how does your Shopify reconciliation work?",
+    "expectedAction": "auto_send_reply",
+    "expectAsksIfBot": true
+  },
+  {
+    "id": "bot-05",
+    "category": "bot_question",
+    "inboundBody": "Be honest — is this an automated email or is a human writing?",
+    "expectedAction": "auto_send_reply",
+    "expectAsksIfBot": true
+  },
+  {
+    "id": "bot-06",
+    "category": "bot_question",
+    "inboundBody": "Are you an AI assistant? Also what is the monthly cost?",
+    "expectedAction": "auto_send_reply",
+    "expectAsksIfBot": true,
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "price-01",
+    "category": "pricing",
+    "inboundBody": "How much does Ledgerwise cost per month?",
+    "expectedAction": "auto_send_reply",
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "price-02",
+    "category": "pricing",
+    "inboundBody": "What is your typical pricing for a $4M Shopify brand?",
+    "expectedAction": "auto_send_reply",
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "price-03",
+    "category": "pricing",
+    "inboundBody": "Can you share your monthly retainer or fee structure?",
+    "expectedAction": "auto_send_reply",
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "price-04",
+    "category": "pricing",
+    "inboundBody": "Do you charge a flat fee or tiered rates based on orders?",
+    "expectedAction": "auto_send_reply",
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "price-05",
+    "category": "pricing",
+    "inboundBody": "What budget should we expect before booking a call?",
+    "expectedAction": "auto_send_reply",
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "price-06",
+    "category": "pricing",
+    "inboundBody": "Happy to hop on a quick call — first, what's the fee range?",
+    "expectedAction": "auto_send_reply",
+    "expectMentionsPricing": true
+  },
+  {
+    "id": "meet-01",
+    "category": "meeting_schedule",
+    "inboundBody": "Sounds good — I'm on PST, can we schedule 15 minutes next week?",
+    "expectedAction": "auto_send_reply",
+    "expectedTimezone": "America/Los_Angeles"
+  },
+  {
+    "id": "meet-02",
+    "category": "meeting_schedule",
+    "inboundBody": "Option 2 works great for me! Please send the invite.",
+    "expectedAction": "auto_send_reply",
+    "useOfferedSlots": true,
+    "expectBooking": true
+  },
+  {
+    "id": "meet-03",
+    "category": "meeting_schedule",
+    "inboundBody": "Let's book the first slot.",
+    "expectedAction": "auto_send_reply",
+    "useOfferedSlots": true,
+    "expectBooking": true
+  },
+  {
+    "id": "meet-04",
+    "category": "meeting_schedule",
+    "inboundBody": "Thursday works for me — go ahead and book that slot.",
+    "expectedAction": "auto_send_reply",
+    "useOfferedSlots": true,
+    "expectBooking": true
+  },
+  {
+    "id": "meet-05",
+    "category": "meeting_schedule",
+    "inboundBody": "I'm on CST, happy to set up a quick call to look at our books.",
+    "expectedAction": "auto_send_reply",
+    "expectedTimezone": "America/Chicago"
+  },
+  {
+    "id": "meet-06",
+    "category": "meeting_schedule",
+    "inboundBody": "Available EST afternoons — send over some times for a walkthrough.",
+    "expectedAction": "auto_send_reply",
+    "expectedTimezone": "America/New_York"
+  },
+  {
+    "id": "meet-07",
+    "category": "meeting_schedule",
+    "inboundBody": "We are not interested in waiting another quarter with messy Amazon clearing — let's schedule a call.",
+    "expectedAction": "auto_send_reply",
+    "expectOptOut": false
+  },
+  {
+    "id": "meet-08",
+    "category": "meeting_schedule",
+    "inboundBody": "I'm based in London GMT, could we look at a 20-minute calendar link?",
+    "expectedAction": "auto_send_reply",
+    "expectedTimezone": "Europe/London"
+  },
+  {
+    "id": "obj-01",
+    "category": "objection",
+    "inboundBody": "We already use Bench for our monthly books.",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "obj-02",
+    "category": "objection",
+    "inboundBody": "We're currently using Pilot — not sure we need a switch.",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "obj-03",
+    "category": "objection",
+    "inboundBody": "Our local bookkeeper already handles our QuickBooks close.",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "obj-04",
+    "category": "objection",
+    "inboundBody": "We already work with our CPA for everything right now.",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "obj-05",
+    "category": "objection",
+    "inboundBody": "Happy with our current bookkeeper at the moment.",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "obj-06",
+    "category": "objection",
+    "inboundBody": "We use Finaloop right now for Shopify syncs.",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "faq-01",
+    "category": "playbook_faq",
+    "inboundBody": "How do you handle both Shopify Payments and Amazon Seller Central payouts?",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "faq-02",
+    "category": "playbook_faq",
+    "inboundBody": "How long does onboarding take?",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "faq-03",
+    "category": "playbook_faq",
+    "inboundBody": "Do you replace our tax CPA at year-end?",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "faq-04",
+    "category": "playbook_faq",
+    "inboundBody": "Can you reconcile SKU-level COGS with ShipBob 3PL inventory?",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "faq-05",
+    "category": "playbook_faq",
+    "inboundBody": "Do you support QuickBooks Online and Xero accrual closes?",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "faq-06",
+    "category": "playbook_faq",
+    "inboundBody": "Can your team help monitor multi-state sales tax nexus from Shopify?",
+    "expectedAction": "auto_send_reply"
+  },
+  {
+    "id": "esc-01",
+    "category": "human_escalation",
+    "inboundBody": "Can your team file international VAT registration in Germany and handle GAAP certified audit opinions?",
+    "expectedAction": "escalate_to_human"
+  },
+  {
+    "id": "esc-02",
+    "category": "human_escalation",
+    "inboundBody": "Can I speak to a human account executive to redline our MSA and DPA?",
+    "expectedAction": "escalate_to_human"
+  },
+  {
+    "id": "esc-03",
+    "category": "human_escalation",
+    "inboundBody": "Do you file 1120 corporate tax returns directly and have a SOC 2 report?",
+    "expectedAction": "escalate_to_human"
+  },
+  {
+    "id": "esc-04",
+    "category": "human_escalation",
+    "inboundBody": "Hmm, maybe?",
+    "expectedAction": "escalate_to_human"
+  },
+  {
+    "id": "misc-01",
+    "category": "ooo_referral_hostile",
+    "inboundBody": "I am out of office returning on Monday with limited access to email.",
+    "expectedAction": "ooo_pause"
+  },
+  {
+    "id": "misc-02",
+    "category": "ooo_referral_hostile",
+    "inboundBody": "I'm forwarding this to our Controller — please talk to our controller Sarah.",
+    "expectedAction": "escalate_to_human"
+  },
+  {
+    "id": "misc-03",
+    "category": "ooo_referral_hostile",
+    "inboundBody": "You should reach out to our CFO Alex; I'm looping him in.",
+    "expectedAction": "escalate_to_human"
+  },
+  {
+    "id": "misc-04",
+    "category": "ooo_referral_hostile",
+    "inboundBody": "This is spam, stop wasting my time before I report you.",
+    "expectedAction": "escalate_to_human"
+  }
+]
