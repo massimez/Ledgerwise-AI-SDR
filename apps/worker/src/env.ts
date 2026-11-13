@@ -47,6 +47,21 @@ const workerEnvSchema = z
 				message: "REDIS_URL must start with redis:// or rediss://",
 			}),
 		RESEND_API_KEY: z.string().trim().default(""),
+		OUTBOUND_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
+		SANDBOX_RECIPIENT_EMAIL: z.string().trim().default(""),
+		INBOUND_EMAIL_DOMAIN: z.string().trim().default("inbox.ledgerwise.demo"),
+		OPENROUTER_API_KEY: z.string().trim().default(""),
+		SDR_MODEL_FAST: z
+			.string()
+			.trim()
+			.default("openrouter/google/gemini-2.5-flash"),
+		SDR_MODEL_SMART: z
+			.string()
+			.trim()
+			.default("openrouter/anthropic/claude-sonnet-4.5"),
+		EXA_API_KEY: z.string().trim().default(""),
+		CALCOM_API_KEY: z.string().trim().default(""),
+		CALCOM_EVENT_TYPE_ID: z.string().trim().default(""),
 		VAPID_PRIVATE_KEY: z.string().trim().default(""),
 		VAPID_PUBLIC_KEY: z.string().trim().default(""),
 		VAPID_SUBJECT: z

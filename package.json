@@ -1,5 +1,5 @@
 {
-  "name": "e2e-ai-starter",
+  "name": "ledgerwise-sdr",
   "private": true,
   "description": "Production-ready multi-tenant SaaS starter with Next.js 16, Hono, Better Auth, Drizzle ORM, Mastra AI agents, pgvector, S3 storage, and BullMQ background workers",
   "keywords": [
@@ -50,6 +50,7 @@
     "dev:api": "turbo -F @workspace/api dev",
     "dev:web": "turbo -F @workspace/web dev",
     "dev:worker": "turbo -F @workspace/worker dev",
+    "eval:replies": "bun run packages/ai-core/evals/run-replies.ts",
     "fix": "ultracite fix",
     "prepare": "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then lefthook install; fi",
     "setup": "bun run scripts/setup.ts",

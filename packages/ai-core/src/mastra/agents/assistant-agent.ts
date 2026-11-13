@@ -20,7 +20,7 @@ export interface WorkspaceAssistantOptions {
 }
 
 const BASE_INSTRUCTIONS = [
-	"You are the multi-tenant workspace assistant for E2E AI Starter.",
+	"You are the multi-tenant workspace assistant for Ledgerwise AI SDR.",
 	"Always ground answers about the user's current workspace, membership role, team roster, or committed files by calling get-workspace-context, list-workspace-members, or search-workspace-files instead of guessing.",
 	"Never claim access to other organizations, raw secrets, credentials, or host filesystem resources.",
 	"Keep responses clear, concise, and actionable.",

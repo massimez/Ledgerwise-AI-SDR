@@ -132,7 +132,7 @@ export function createMastraRuntime(
 					configs: {
 						default: {
 							exporters: [new MastraStorageExporter()],
-							serviceName: "e2e-ai-starter",
+							serviceName: "ledgerwise-sdr",
 							spanOutputProcessors: [new SensitiveDataFilter()],
 						},
 					},

@@ -3,10 +3,10 @@
  * web, API, and worker workspaces without runtime dependencies.
  */
 export const APP_CONFIG = {
-	defaultBucketName: "starter-uploads",
-	defaultDatabaseName: "starter_db",
+	defaultBucketName: "ledgerwise-sdr-uploads",
+	defaultDatabaseName: "ledgerwise_sdr_db",
 	defaultFromEmail: "noreply@example.com",
-	defaultRedisPrefix: "starter",
+	defaultRedisPrefix: "ledgerwise-sdr",
 	description:
 		"Bun and Turborepo starter with Better Auth multi-tenancy, RBAC, Hono RPC, Drizzle ORM, Mastra AI agents (Gemini, OpenAI, Anthropic, OpenRouter) and pgvector, private S3/R2 storage, and BullMQ workers.",
 	keywords: [
@@ -29,6 +29,6 @@ export const APP_CONFIG = {
 		"tailwind-css",
 		"typescript",
 	],
-	name: "E2E AI Starter",
+	name: "Ledgerwise AI SDR",
 	tagline: "Multi-Tenant Next.js, Hono, Drizzle & Mastra AI Starter",
 } as const;
