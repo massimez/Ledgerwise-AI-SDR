@@ -41,3 +41,17 @@ This is a Bun workspaces monorepo using Turborepo:
   - `apps/web` forwards browser `/api/*` requests via `next.config.ts` rewrites to `INTERNAL_API_URL || NEXT_PUBLIC_API_URL || "http://localhost:3001"` and verifies server sessions via `getServerSession()`.
   - Shared constants (RBAC role/permission matrices, storage allowlists, queue names, notification categories/channels) live in concrete `apps/api` modules and are exported via pure `@workspace/api/{permissions,queues,storage}` subpaths.
   - `@workspace/ai-core` (`packages/ai-core`) depends only on Mastra, AI SDK, Zod, Drizzle, and `@workspace/db`—never `@workspace/api`—and persists Mastra state/vectors via `PostgresStore` + `PgVector` (`pgvector/pgvector:pg16`) inside `MASTRA_DB_SCHEMA` (`mastra`). AI env vars (`MASTRA_DEFAULT_MODEL`, provider keys `GOOGLE_GENERATIVE_AI_API_KEY`/`OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`OPENROUTER_API_KEY`, `MASTRA_EMBEDDING_MODEL` (google/* or openai/*), `MASTRA_EMBEDDING_DIMENSIONS`, `MASTRA_DB_SCHEMA`) live at root `.env`. Add new providers in `AI_PROVIDERS` (`packages/ai-core/src/contracts.ts`) and `apps/api/src/env.ts`.
+
+## Ledgerwise AI SDR Domain Invariants
+
+Always enforce these domain rules in both deterministic code and agent prompts (`docs/specs/2026-11-13-ledgerwise-sdr-design.md`):
+
+1. **Zero Unverified Facts**: Never claim anything about a prospect company that does not come from a real, verified `evidence` row (`verified = true`, with `url` and verbatim `quote` matched against fetched source text).
+2. **Never Quote Pricing**: Pricing is discussed only on a call. Every outbound first email and reply must pass the deterministic price regex guard before queuing or sending.
+3. **Hard Opt-Out & Suppression Gate**: If any prospect reply matches opt-out/unsubscribe/"not interested" (via deterministic regex OR LLM classifier), immediately record the address in `suppressions`, mark the thread `opted_out`, and never send another email to that address. Every outbound send in `apps/worker` must check `suppressions` inside the send gate.
+4. **Honest Bot Disclosure (`when_asked`)**: When a prospect asks if they are talking to an AI or bot (`asksIfBot = true`), answer honestly that you are Ledgerwise's AI assistant working alongside the sales team, and verify the disclosure in the output guard.
+5. **Human-in-the-Loop Escalation**: First outreach emails always require human approval (`pending_review`). For replies, any low-confidence classification (`< 0.75`), unknown question outside `sdr_settings.playbook`, human/referral/hostile request, or guard failure must transition the thread to `needs_human` and pause AI auto-replies (`ai_mode = "paused"`).
+6. **Qualification & Email Constraints**:
+   - Private US e-commerce brands that pass the US + e-commerce gates with no enterprise disqualifier score `10/15` for `unknown` revenue and `10/15` for `unknown` employee count.
+   - First emails must be conversational, plain text, `< 100` words, with zero links, zero prices, and no physical mailing address footer.
+
