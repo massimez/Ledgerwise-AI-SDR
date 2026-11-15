@@ -49,6 +49,9 @@ next-env.d.ts
 # Database backups
 backups/
 
+# AI session exports (kept local for submission, excluded from public repo)
+session-exports/
+
 # Python
 __pycache__/
 *.py[cod]

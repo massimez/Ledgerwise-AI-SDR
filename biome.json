@@ -25,7 +25,8 @@
       "!**/.agents",
       "!**/.claude",
       "!**/graphify-out",
-      "!**/.mastra"
+      "!**/.mastra",
+      "!**/session-exports"
     ]
   },
   "formatter": {
