@@ -7,7 +7,6 @@
   ],
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
     "./globals.css": "./src/styles/globals.css",
     "./components/*": "./src/components/*.tsx",
     "./components/auth/*": "./src/components/auth/*.tsx",

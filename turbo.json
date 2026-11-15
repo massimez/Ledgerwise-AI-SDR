@@ -37,13 +37,21 @@
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
+        "ANTHROPIC_API_KEY",
         "DATABASE_URL",
+        "EXA_API_KEY",
+        "GOOGLE_API_KEY",
         "GOOGLE_GENERATIVE_AI_API_KEY",
         "MASTRA_DB_SCHEMA",
         "MASTRA_DEFAULT_MODEL",
-        "MASTRA_EMBEDDING_MODEL",
         "MASTRA_EMBEDDING_DIMENSIONS",
-        "NODE_ENV"
+        "MASTRA_EMBEDDING_MODEL",
+        "MASTRA_STUDIO_PORT",
+        "NODE_ENV",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "SDR_MODEL_FAST",
+        "SDR_MODEL_SMART"
       ]
     },
     "db:push": {

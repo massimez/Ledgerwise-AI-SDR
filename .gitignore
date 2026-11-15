@@ -46,6 +46,9 @@ Thumbs.db
 *.tsbuildinfo
 next-env.d.ts
 
+# Database backups
+backups/
+
 # Python
 __pycache__/
 *.py[cod]

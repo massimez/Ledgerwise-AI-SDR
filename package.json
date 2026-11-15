@@ -50,8 +50,11 @@
     "dev:api": "turbo -F @workspace/api dev",
     "dev:web": "turbo -F @workspace/web dev",
     "dev:worker": "turbo -F @workspace/worker dev",
+    "eval": "bun run scripts/eval/run.ts",
+    "eval:booking": "bun run packages/ai-core/evals/run-booking.ts",
     "eval:replies": "bun run packages/ai-core/evals/run-replies.ts",
     "fix": "ultracite fix",
+    "mastra:studio": "bash scripts/mastra-studio.sh",
     "prepare": "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then lefthook install; fi",
     "setup": "bun run scripts/setup.ts",
     "test": "NODE_ENV=test bun test"

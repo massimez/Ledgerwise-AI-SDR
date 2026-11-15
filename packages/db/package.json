@@ -14,17 +14,25 @@
     "./schema/*": {
       "types": "./src/schema/*.ts",
       "import": "./src/schema/*.ts"
+    },
+    "./sdr-defaults": {
+      "types": "./src/sdr-defaults.ts",
+      "import": "./src/sdr-defaults.ts"
+    },
+    "./seed": {
+      "types": "./src/seed-data.ts",
+      "import": "./src/seed-data.ts"
     }
   },
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
     "check-types": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:seed": "bun src/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:generate": "bun --env-file=../../.env ./node_modules/.bin/drizzle-kit generate",
+    "db:migrate": "bun --env-file=../../.env ./node_modules/.bin/drizzle-kit migrate",
+    "db:push": "bun --env-file=../../.env ./node_modules/.bin/drizzle-kit push",
+    "db:seed": "bun --env-file=../../.env src/seed.ts",
+    "db:studio": "bun --env-file=../../.env ./node_modules/.bin/drizzle-kit studio"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",

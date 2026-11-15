@@ -25,6 +25,14 @@
       "types": "./src/lib/queues.ts",
       "import": "./src/lib/queues.ts"
     },
+    "./sdr-inbound": {
+      "types": "./src/modules/sdr/threads/inbound-executor.ts",
+      "import": "./src/modules/sdr/threads/inbound-executor.ts"
+    },
+    "./sdr-shared": {
+      "types": "./src/modules/sdr/shared/sdr.repository.ts",
+      "import": "./src/modules/sdr/shared/sdr.repository.ts"
+    },
     "./storage": {
       "types": "./src/modules/storage/config.ts",
       "import": "./src/modules/storage/config.ts"
@@ -33,8 +41,8 @@
   "main": "src/index.ts",
   "scripts": {
     "check-types": "tsc --noEmit",
-    "dev": "bun run --hot src/index.ts",
-    "start": "bun run src/index.ts"
+    "dev": "bun --env-file=../../.env --hot src/index.ts",
+    "start": "bun --env-file=../../.env src/index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",

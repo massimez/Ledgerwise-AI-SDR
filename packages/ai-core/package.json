@@ -18,7 +18,7 @@
   "scripts": {
     "build:mastra": "mastra build",
     "check-types": "tsc --noEmit",
-    "studio": "bun --env-file=../../.env x mastra dev"
+    "studio": "PORT=${MASTRA_STUDIO_PORT:-4111} bun --env-file=../../.env x mastra dev"
   },
   "dependencies": {
     "@mastra/core": "catalog:",
