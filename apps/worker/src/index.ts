@@ -3,6 +3,11 @@ import type {
 	SdrOutboundJobData,
 	SdrPipelineJobData,
 } from "@workspace/api/queues";
+import {
+	SDR_INBOUND_QUEUE_NAME,
+	SDR_OUTBOUND_QUEUE_NAME,
+	SDR_PIPELINE_QUEUE_NAME,
+} from "@workspace/api/queues";
 import { closeDb, db } from "@workspace/db";
 import type { Worker } from "bullmq";
 import { sql } from "drizzle-orm";
@@ -13,7 +18,11 @@ import {
 	createWorker,
 	pingWorkerRedis,
 } from "./lib/redis";
-import { closeWorkerSdrQueues } from "./lib/sdr-queues";
+import {
+	buildSdrInboundWorkerOptions,
+	buildSdrPipelineWorkerOptions,
+	closeWorkerSdrQueues,
+} from "./lib/sdr-queues";
 import {
 	EMAIL_QUEUE_NAME,
 	type EmailJobData,
@@ -24,18 +33,9 @@ import {
 	type NotificationJobData,
 	processNotificationJob,
 } from "./processors/notification";
-import {
-	processSdrInboundJob,
-	SDR_INBOUND_QUEUE_NAME,
-} from "./processors/sdr/inbound";
-import {
-	processSdrOutboundJob,
-	SDR_OUTBOUND_QUEUE_NAME,
-} from "./processors/sdr/outbound";
-import {
-	processSdrPipelineJob,
-	SDR_PIPELINE_QUEUE_NAME,
-} from "./processors/sdr/pipeline";
+import { processSdrInboundJob } from "./processors/sdr/inbound/inbound.processor";
+import { processSdrOutboundJob } from "./processors/sdr/outbound/outbound.processor";
+import { processSdrPipelineJob } from "./processors/sdr/pipeline/pipeline.processor";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 const READINESS_TIMEOUT_MS = 3000;
@@ -44,6 +44,7 @@ logInfo("WorkerService", "Booting BullMQ workers", {
 	concurrency: env.WORKER_CONCURRENCY,
 	env: env.NODE_ENV,
 	outboundMode: env.OUTBOUND_MODE,
+	sdrRateLimitMaxPerMin: env.SDR_WORKER_LLM_RPM,
 });
 
 const emailWorker = createWorker<EmailJobData>(
@@ -57,7 +58,7 @@ const notificationWorker = createWorker<NotificationJobData>(
 const sdrPipelineWorker = createWorker<SdrPipelineJobData>(
 	SDR_PIPELINE_QUEUE_NAME,
 	processSdrPipelineJob,
-	{ concurrency: Math.min(3, env.WORKER_CONCURRENCY) }
+	buildSdrPipelineWorkerOptions(env.WORKER_CONCURRENCY, env.SDR_WORKER_LLM_RPM)
 );
 const sdrOutboundWorker = createWorker<SdrOutboundJobData>(
 	SDR_OUTBOUND_QUEUE_NAME,
@@ -67,7 +68,7 @@ const sdrOutboundWorker = createWorker<SdrOutboundJobData>(
 const sdrInboundWorker = createWorker<SdrInboundJobData>(
 	SDR_INBOUND_QUEUE_NAME,
 	processSdrInboundJob,
-	{ concurrency: Math.min(3, env.WORKER_CONCURRENCY) }
+	buildSdrInboundWorkerOptions(env.WORKER_CONCURRENCY, env.SDR_WORKER_LLM_RPM)
 );
 
 function attachWorkerListeners(label: string, worker: Worker): void {

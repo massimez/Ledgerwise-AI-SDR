@@ -3,10 +3,9 @@ import {
 	companies,
 	contacts,
 	messages,
-	suppressions,
 	threads,
 } from "@workspace/db/schema/sdr";
-import { and, eq } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 
 /** Load message, thread, and contact context required for outbound send-gates. */
 export async function loadOutboundDeliveryContext(
@@ -46,7 +45,12 @@ export async function loadOutboundDeliveryContext(
 				await db
 					.select()
 					.from(contacts)
-					.where(eq(contacts.id, thread.contactId))
+					.where(
+						and(
+							eq(contacts.id, thread.contactId),
+							eq(contacts.organizationId, organizationId)
+						)
+					)
 					.limit(1)
 			)[0]
 		: undefined;
@@ -54,27 +58,9 @@ export async function loadOutboundDeliveryContext(
 	return { contact, message, thread };
 }
 
-/** Check whether a recipient email is on the organization suppression list. */
-export async function findOutboundSuppression(
-	organizationId: string,
-	email: string
-) {
-	const [suppressed] = await db
-		.select({ id: suppressions.id, reason: suppressions.reason })
-		.from(suppressions)
-		.where(
-			and(
-				eq(suppressions.organizationId, organizationId),
-				eq(suppressions.email, email)
-			)
-		)
-		.limit(1);
-
-	return suppressed ?? null;
-}
-
 /** Mark an outbound message failed without mutating thread status. */
 export async function markOutboundMessageFailed(
+	organizationId: string,
 	messageId: string,
 	reason: string
 ) {
@@ -84,26 +70,72 @@ export async function markOutboundMessageFailed(
 			rejectReason: reason,
 			status: "failed",
 		})
-		.where(eq(messages.id, messageId));
+		.where(
+			and(
+				eq(messages.id, messageId),
+				eq(messages.organizationId, organizationId)
+			)
+		);
+}
+
+/** Move an approved/queued outbound draft back to review when daily send cap is reached. */
+export async function holdMessageForDailyCap(params: {
+	cap: number;
+	messageId: string;
+	organizationId: string;
+	threadId: string;
+}) {
+	await db.transaction(async (tx) => {
+		await tx
+			.update(messages)
+			.set({
+				decisionSummary: `Held for review: daily send cap (${params.cap}) reached.`,
+				status: "pending_review",
+			})
+			.where(
+				and(
+					eq(messages.id, params.messageId),
+					eq(messages.organizationId, params.organizationId)
+				)
+			);
+		await tx
+			.update(threads)
+			.set({
+				pendingJobId: null,
+				status: "awaiting_review",
+			})
+			.where(
+				and(
+					eq(threads.id, params.threadId),
+					eq(threads.organizationId, params.organizationId)
+				)
+			);
+	});
 }
 
 /** Record send-gate failure and pause the thread (opted_out or needs_human). */
 export async function recordSendGateBlock(params: {
 	handoffReason?: string;
 	messageId: string;
+	organizationId: string;
 	rejectReason: string;
 	threadId: string;
 	threadStatus: "opted_out" | "needs_human";
 }) {
-	await Promise.all([
-		db
+	await db.transaction(async (tx) => {
+		await tx
 			.update(messages)
 			.set({
 				rejectReason: params.rejectReason,
 				status: "failed",
 			})
-			.where(eq(messages.id, params.messageId)),
-		db
+			.where(
+				and(
+					eq(messages.id, params.messageId),
+					eq(messages.organizationId, params.organizationId)
+				)
+			);
+		await tx
 			.update(threads)
 			.set({
 				aiMode: "paused",
@@ -113,48 +145,84 @@ export async function recordSendGateBlock(params: {
 				pendingJobId: null,
 				status: params.threadStatus,
 			})
-			.where(eq(threads.id, params.threadId)),
-	]);
+			.where(
+				and(
+					eq(threads.id, params.threadId),
+					eq(threads.organizationId, params.organizationId)
+				)
+			);
+	});
 }
 
 /** Mark outbound message delivered and synchronize thread + company statuses. */
 export async function markOutboundDelivered(params: {
 	companyId: string;
-	currentAiReplyCount: number;
 	currentThreadStatus: string;
 	incrementAiReply: boolean;
 	messageId: string;
+	organizationId: string;
 	providerMessageId: string;
 	threadId: string;
 }) {
 	const sentAt = new Date();
 	const isBooked = params.currentThreadStatus === "booked";
 
-	await Promise.all([
-		db
+	await db.transaction(async (tx) => {
+		await tx
 			.update(messages)
 			.set({
 				providerMessageId: params.providerMessageId,
 				sentAt,
 				status: "sent",
 			})
-			.where(eq(messages.id, params.messageId)),
-		db
+			.where(
+				and(
+					eq(messages.id, params.messageId),
+					eq(messages.organizationId, params.organizationId)
+				)
+			);
+		await tx
 			.update(threads)
 			.set({
 				lastMessageAt: sentAt,
 				pendingJobId: null,
 				status: isBooked ? "booked" : "active",
 				...(params.incrementAiReply
-					? { aiReplyCount: params.currentAiReplyCount + 1 }
+					? { aiReplyCount: sql`${threads.aiReplyCount} + 1` }
 					: {}),
 			})
-			.where(eq(threads.id, params.threadId)),
-		db
-			.update(companies)
-			.set({
-				status: isBooked ? "meeting_booked" : "contacted",
-			})
-			.where(eq(companies.id, params.companyId)),
-	]);
+			.where(
+				and(
+					eq(threads.id, params.threadId),
+					eq(threads.organizationId, params.organizationId)
+				)
+			);
+		if (isBooked) {
+			await tx
+				.update(companies)
+				.set({ status: "meeting_booked" })
+				.where(
+					and(
+						eq(companies.id, params.companyId),
+						eq(companies.organizationId, params.organizationId)
+					)
+				);
+		} else {
+			await tx
+				.update(companies)
+				.set({ status: "contacted" })
+				.where(
+					and(
+						eq(companies.id, params.companyId),
+						eq(companies.organizationId, params.organizationId),
+						notInArray(companies.status, [
+							"replied",
+							"meeting_booked",
+							"suppressed",
+							"disqualified",
+						])
+					)
+				);
+		}
+	});
 }

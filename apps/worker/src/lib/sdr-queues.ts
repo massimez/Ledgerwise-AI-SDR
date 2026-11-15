@@ -14,6 +14,36 @@ const DEFAULT_SDR_JOB_OPTIONS = {
 	removeOnFail: 1000,
 };
 
+const PIPELINE_SDR_JOB_OPTIONS = {
+	...DEFAULT_SDR_JOB_OPTIONS,
+	backoff: { delay: 15_000, type: "exponential" as const },
+};
+
+export const SDR_LLM_RATE_LIMITER = {
+	duration: 60_000,
+	max: 10,
+} as const;
+
+export function buildSdrPipelineWorkerOptions(
+	workerConcurrency: number,
+	maxPerMin: number = SDR_LLM_RATE_LIMITER.max
+) {
+	return {
+		concurrency: Math.min(2, workerConcurrency),
+		limiter: { duration: SDR_LLM_RATE_LIMITER.duration, max: maxPerMin },
+	};
+}
+
+export function buildSdrInboundWorkerOptions(
+	workerConcurrency: number,
+	maxPerMin: number = SDR_LLM_RATE_LIMITER.max
+) {
+	return {
+		concurrency: Math.min(2, workerConcurrency),
+		limiter: { duration: SDR_LLM_RATE_LIMITER.duration, max: maxPerMin },
+	};
+}
+
 let outboundQueue: Queue<SdrOutboundJobData> | null = null;
 let pipelineQueue: Queue<SdrPipelineJobData> | null = null;
 
@@ -32,7 +62,7 @@ function getPipelineQueue(): Queue<SdrPipelineJobData> {
 	if (!pipelineQueue) {
 		pipelineQueue = new Queue<SdrPipelineJobData>(SDR_PIPELINE_QUEUE_NAME, {
 			connection: redisConnection,
-			defaultJobOptions: DEFAULT_SDR_JOB_OPTIONS,
+			defaultJobOptions: PIPELINE_SDR_JOB_OPTIONS,
 			prefix: queuePrefix,
 		});
 	}

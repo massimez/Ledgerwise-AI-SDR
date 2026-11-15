@@ -19,13 +19,16 @@ export function processSdrPipelineJob(
 	}
 
 	const payload = parsed.data;
+	const maxAttempts = job.opts.attempts ?? 1;
+	const isFinalAttempt = job.attemptsMade + 1 >= maxAttempts;
+
 	switch (payload.action) {
 		case "discover-batch":
 			return handleDiscoverBatch(payload);
 		case "research-company":
-			return handleResearchCompany(payload);
+			return handleResearchCompany(payload, { isFinalAttempt });
 		case "regenerate-draft":
-			return handleRegenerateDraft(payload);
+			return handleRegenerateDraft(payload, { isFinalAttempt });
 		default:
 			throw new UnrecoverableError("Unsupported SDR pipeline action");
 	}

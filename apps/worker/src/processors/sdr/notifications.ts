@@ -16,27 +16,31 @@ export async function notifyOrgSdrMembers(options: {
 		const orgMembers = await db
 			.select({ userId: member.userId })
 			.from(member)
-			.where(eq(member.organizationId, options.organizationId))
-			.limit(10);
+			.where(eq(member.organizationId, options.organizationId));
 
 		if (orgMembers.length === 0) {
 			return;
 		}
 
-		await db.insert(notification).values(
-			orgMembers.map((entry) => ({
-				userId: entry.userId,
-				organizationId: options.organizationId,
-				category: "system" as const,
-				type: options.type,
-				title: options.title,
-				content: options.content,
-				data: options.data ?? null,
-				idempotencyKey: options.idempotencyKey
-					? `${options.idempotencyKey}:${entry.userId}`
-					: null,
-			}))
-		);
+		await db
+			.insert(notification)
+			.values(
+				orgMembers.map((entry) => ({
+					userId: entry.userId,
+					organizationId: options.organizationId,
+					category: "system" as const,
+					type: options.type,
+					title: options.title,
+					content: options.content,
+					data: options.data ?? null,
+					idempotencyKey: options.idempotencyKey
+						? `${options.idempotencyKey}:${entry.userId}`
+						: null,
+				}))
+			)
+			.onConflictDoNothing({
+				target: [notification.userId, notification.idempotencyKey],
+			});
 	} catch (error) {
 		logWarning("SdrNotifications", "Failed to create org SDR notification", {
 			error: error instanceof Error ? error.message : "unknown",

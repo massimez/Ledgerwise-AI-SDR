@@ -1,3 +1,4 @@
+import { assertPublicHttpUrl } from "@workspace/ai-core";
 import { UnrecoverableError } from "bullmq";
 import { sendNotification, WebPushError } from "web-push";
 import { env } from "../env";
@@ -40,32 +41,23 @@ export class PushDeliveryError extends Error {
 const PERMANENT_PUSH_STATUSES = new Set([400, 401, 403]);
 const GONE_PUSH_STATUSES = new Set([404, 410]);
 
-function validatePushEndpoint(endpoint: string): void {
-	let parsed: URL;
+async function validatePushEndpoint(endpoint: string): Promise<void> {
 	try {
-		parsed = new URL(endpoint);
+		await assertPublicHttpUrl(endpoint, {
+			allowHttp: false,
+			allowLocalDev: env.NODE_ENV !== "production",
+		});
 	} catch (error) {
-		throw new PushDeliveryError("Invalid push endpoint URL", {
-			cause: error,
-			isGone: true,
-			statusCode: 400,
-		});
-	}
-
-	if (parsed.protocol === "https:") {
-		return;
-	}
-
-	const isLocalDevHttp =
-		env.NODE_ENV !== "production" &&
-		parsed.protocol === "http:" &&
-		(parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1");
-
-	if (!isLocalDevHttp) {
-		throw new PushDeliveryError("Push subscription endpoint must use https", {
-			isGone: true,
-			statusCode: 400,
-		});
+		throw new PushDeliveryError(
+			error instanceof Error
+				? error.message
+				: "Push subscription endpoint must target a public https URL",
+			{
+				cause: error,
+				isGone: true,
+				statusCode: 400,
+			}
+		);
 	}
 }
 
@@ -73,7 +65,7 @@ export async function sendWebPush(
 	sub: PushSubscriptionTarget,
 	payload: PushMessagePayload
 ): Promise<{ simulated: boolean; statusCode: number }> {
-	validatePushEndpoint(sub.endpoint);
+	await validatePushEndpoint(sub.endpoint);
 
 	if (env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY) {
 		try {

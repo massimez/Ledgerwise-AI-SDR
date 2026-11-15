@@ -1,3 +1,7 @@
+import {
+	DEFAULT_SDR_MODEL_FAST,
+	DEFAULT_SDR_MODEL_SMART,
+} from "@workspace/ai-core/contracts";
 import { APP_CONFIG } from "@workspace/api/config";
 import {
 	LOG_FORMATS,
@@ -51,14 +55,12 @@ const workerEnvSchema = z
 		SANDBOX_RECIPIENT_EMAIL: z.string().trim().default(""),
 		INBOUND_EMAIL_DOMAIN: z.string().trim().default("inbox.ledgerwise.demo"),
 		OPENROUTER_API_KEY: z.string().trim().default(""),
-		SDR_MODEL_FAST: z
-			.string()
-			.trim()
-			.default("openrouter/google/gemini-2.5-flash"),
-		SDR_MODEL_SMART: z
-			.string()
-			.trim()
-			.default("openrouter/anthropic/claude-sonnet-4.5"),
+		GOOGLE_GENERATIVE_AI_API_KEY: z.string().trim().default(""),
+		GOOGLE_API_KEY: z.string().trim().default(""),
+		MASTRA_DEFAULT_MODEL: z.string().trim().default(""),
+		SDR_GEMINI_MODEL: z.string().trim().default(""),
+		SDR_MODEL_FAST: z.string().trim().default(DEFAULT_SDR_MODEL_FAST),
+		SDR_MODEL_SMART: z.string().trim().default(DEFAULT_SDR_MODEL_SMART),
 		EXA_API_KEY: z.string().trim().default(""),
 		CALCOM_API_KEY: z.string().trim().default(""),
 		CALCOM_EVENT_TYPE_ID: z.string().trim().default(""),
@@ -72,6 +74,7 @@ const workerEnvSchema = z
 				message: "VAPID_SUBJECT must start with mailto:, http://, or https://",
 			}),
 		WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
+		SDR_WORKER_LLM_RPM: z.coerce.number().int().min(1).max(1000).default(10),
 		WORKER_HEALTH_HOST: z.string().trim().min(1).default("0.0.0.0"),
 		WORKER_HEALTH_PORT: z.coerce
 			.number()

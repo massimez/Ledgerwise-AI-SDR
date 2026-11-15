@@ -1,26 +1,55 @@
 import type { VerifiedEvidenceCandidate } from "@workspace/ai-core";
 import type { evidence } from "@workspace/db/schema/sdr";
 
-/** Infer contact persona bucket from free-text job title. */
+/** Resolve contact persona bucket, honoring structured LLM classification before free-text job-title heuristics. */
 export function inferPersona(
-	role?: string
+	role?: string,
+	explicitPersona?: "founder" | "coo" | "finance" | "other" | null
 ): "founder" | "coo" | "finance" | "other" {
+	if (explicitPersona && explicitPersona !== "other") {
+		return explicitPersona;
+	}
 	const lower = (role ?? "").toLowerCase();
 	if (
 		lower.includes("cfo") ||
 		lower.includes("controller") ||
 		lower.includes("finance") ||
-		lower.includes("account")
+		lower.includes("account") ||
+		lower.includes("bookkeep") ||
+		lower.includes("treasurer")
 	) {
 		return "finance";
 	}
-	if (lower.includes("coo") || lower.includes("operations")) {
+	if (
+		lower.includes("coo") ||
+		lower.includes("operations") ||
+		lower.includes("general manager")
+	) {
 		return "coo";
 	}
-	if (lower.includes("founder") || lower.includes("ceo")) {
+	if (
+		lower.includes("founder") ||
+		lower.includes("ceo") ||
+		lower.includes("owner") ||
+		lower.includes("president") ||
+		lower.includes("managing director")
+	) {
 		return "founder";
 	}
-	return "other";
+	return explicitPersona ?? "other";
+}
+
+/** Map DB `evidence.kind` back to research sourceType cleanly. */
+export function mapDbEvidenceKindToSourceType(
+	kind: (typeof evidence.$inferSelect)["kind"]
+): VerifiedEvidenceCandidate["sourceType"] {
+	if (kind === "job_posting") {
+		return "ats";
+	}
+	if (kind === "funding" || kind === "press") {
+		return "press";
+	}
+	return "website";
 }
 
 /** Map source provenance type onto DB `evidence.kind` enum. */
@@ -60,7 +89,7 @@ export function toVerifiedEvidenceCandidates(
 		id: row.id,
 		quote: row.quote,
 		sourceTitle: row.title ?? companyName,
-		sourceType: row.kind === "job_posting" ? "ats" : "website",
+		sourceType: mapDbEvidenceKindToSourceType(row.kind),
 		url: row.url,
 		verified: true,
 	}));

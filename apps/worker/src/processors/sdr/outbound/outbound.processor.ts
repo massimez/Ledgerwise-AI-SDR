@@ -3,18 +3,76 @@ import {
 	type SdrOutboundJobData,
 	sdrOutboundJobDataSchema,
 } from "@workspace/api/queues";
+import {
+	findSuppressedEmail,
+	getDailySendCapStatus,
+} from "@workspace/api/sdr-shared";
 import { type Job, UnrecoverableError } from "bullmq";
 import { env } from "../../../env";
 import { sendEmail } from "../../../lib/email-sender";
 import { logInfo, logWarning } from "../../../lib/logger";
 import { resolveOutboundDeliveryTarget } from "./delivery-target";
 import {
-	findOutboundSuppression,
+	holdMessageForDailyCap,
 	loadOutboundDeliveryContext,
 	markOutboundDelivered,
 	markOutboundMessageFailed,
 	recordSendGateBlock,
 } from "./outbound.repository";
+
+async function sendEmailWithTerminalFallback(params: {
+	headers: Record<string, string>;
+	html: string;
+	isFinalAttempt: boolean;
+	message: { bodyText: string; id: string };
+	organizationId: string;
+	replyTo: string;
+	target: { allowSimulator: boolean; subject: string; toEmail: string };
+	threadId: string;
+}) {
+	try {
+		return await sendEmail({
+			allowSimulator: params.target.allowSimulator,
+			headers: params.headers,
+			html: params.html,
+			idempotencyKey: `sdr-msg-${params.message.id}`,
+			redactBodyInLogs: true,
+			replyTo: params.replyTo,
+			subject: params.target.subject,
+			text: params.message.bodyText,
+			to: params.target.toEmail,
+		});
+	} catch (error) {
+		if (error instanceof UnrecoverableError || params.isFinalAttempt) {
+			const errMsg =
+				error instanceof Error
+					? error.message
+					: "Outbound email delivery failed";
+			await recordSendGateBlock({
+				handoffReason: `Outbound email delivery failed: ${errMsg}`,
+				messageId: params.message.id,
+				organizationId: params.organizationId,
+				rejectReason: errMsg,
+				threadId: params.threadId,
+				threadStatus: "needs_human",
+			}).catch((fallbackError) => {
+				logWarning(
+					"SdrOutbound",
+					"Failed to persist outbound send-gate failure",
+					{
+						error:
+							fallbackError instanceof Error
+								? fallbackError.message
+								: String(fallbackError),
+						messageId: params.message.id,
+						threadId: params.threadId,
+					}
+				);
+			});
+		}
+		throw error;
+	}
+}
 
 /** Process an outbound SDR email job with mandatory suppression & price send-gates. */
 export async function processSdrOutboundJob(
@@ -48,6 +106,11 @@ export async function processSdrOutboundJob(
 			providerMessageId: message.providerMessageId ?? undefined,
 		};
 	}
+	if (message.status !== "approved" && message.status !== "queued") {
+		throw new UnrecoverableError(
+			`Outbound message ${messageId} is in non-sendable status "${message.status}".`
+		);
+	}
 	if (!thread) {
 		throw new UnrecoverableError(`Thread ${threadId} not found.`);
 	}
@@ -55,6 +118,7 @@ export async function processSdrOutboundJob(
 	const recipientEmail = contact?.email?.trim().toLowerCase() ?? "";
 	if (!recipientEmail) {
 		await markOutboundMessageFailed(
+			organizationId,
 			message.id,
 			"Missing recipient contact email."
 		);
@@ -63,13 +127,11 @@ export async function processSdrOutboundJob(
 		);
 	}
 
-	const suppressed = await findOutboundSuppression(
-		organizationId,
-		recipientEmail
-	);
+	const suppressed = await findSuppressedEmail(organizationId, recipientEmail);
 	if (suppressed || thread.status === "opted_out") {
 		await recordSendGateBlock({
 			messageId: message.id,
+			organizationId,
 			rejectReason: `Blocked by suppression send-gate (${suppressed?.reason ?? "opted_out"}).`,
 			threadId: thread.id,
 			threadStatus: "opted_out",
@@ -81,6 +143,25 @@ export async function processSdrOutboundJob(
 		return { blockedReason: "suppressed", delivered: false };
 	}
 
+	const capStatus = await getDailySendCapStatus(organizationId, {
+		excludeMessageId: message.id,
+	});
+	if (capStatus.reached) {
+		await holdMessageForDailyCap({
+			cap: capStatus.cap,
+			messageId: message.id,
+			organizationId,
+			threadId: thread.id,
+		});
+		logWarning("SdrOutbound", "Held outbound message due to daily send cap", {
+			cap: capStatus.cap,
+			messageId: message.id,
+			threadId: thread.id,
+			used: capStatus.used,
+		});
+		return { blockedReason: "daily_send_cap", delivered: false };
+	}
+
 	const citedSpans = (message.citations ?? []).map((citation) => citation.span);
 	const priceViolation = detectOutboundPriceViolation(
 		`${message.subject}\n${message.bodyText}`,
@@ -90,6 +171,7 @@ export async function processSdrOutboundJob(
 		await recordSendGateBlock({
 			handoffReason: `Outbound price guard blocked "${priceViolation}"`,
 			messageId: message.id,
+			organizationId,
 			rejectReason: `Blocked by price send-gate: "${priceViolation}"`,
 			threadId: thread.id,
 			threadStatus: "needs_human",
@@ -125,24 +207,24 @@ export async function processSdrOutboundJob(
 		.replaceAll(">", "&gt;")
 		.replaceAll("\n", "<br />");
 
-	const sendResult = await sendEmail({
-		allowSimulator: target.allowSimulator,
+	const maxAttempts = job.opts.attempts ?? 1;
+	const sendResult = await sendEmailWithTerminalFallback({
 		headers,
 		html: `<div>${escapedHtml}</div>`,
-		idempotencyKey: `sdr-msg-${message.id}`,
-		redactBodyInLogs: true,
+		isFinalAttempt: job.attemptsMade + 1 >= maxAttempts,
+		message,
+		organizationId,
 		replyTo,
-		subject: target.subject,
-		text: message.bodyText,
-		to: target.toEmail,
+		target,
+		threadId: thread.id,
 	});
 
 	await markOutboundDelivered({
 		companyId: thread.companyId,
-		currentAiReplyCount: thread.aiReplyCount,
 		currentThreadStatus: thread.status,
 		incrementAiReply: message.author === "ai",
 		messageId: message.id,
+		organizationId,
 		providerMessageId: sendResult.messageId,
 		threadId: thread.id,
 	});
