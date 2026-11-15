@@ -15,6 +15,7 @@ import {
 import {
 	agentRuns,
 	companies,
+	companySourceDocs,
 	contacts,
 	evidence,
 	meetings,
@@ -68,6 +69,7 @@ export const organizationRelations = relations(
 	({ many, one }) => ({
 		agentRuns: many(agentRuns),
 		companies: many(companies),
+		companySourceDocs: many(companySourceDocs),
 		contacts: many(contacts),
 		evidence: many(evidence),
 		invitations: many(invitation),
@@ -236,6 +238,7 @@ export const researchRunsRelations = relations(researchRuns, ({ one }) => ({
 
 export const companiesRelations = relations(companies, ({ many, one }) => ({
 	agentRuns: many(agentRuns),
+	companySourceDocs: many(companySourceDocs),
 	contacts: many(contacts),
 	evidence: many(evidence),
 	meetings: many(meetings),
@@ -247,6 +250,20 @@ export const companiesRelations = relations(companies, ({ many, one }) => ({
 	suppressions: many(suppressions),
 	threads: many(threads),
 }));
+
+export const companySourceDocsRelations = relations(
+	companySourceDocs,
+	({ one }) => ({
+		company: one(companies, {
+			fields: [companySourceDocs.companyId],
+			references: [companies.id],
+		}),
+		organization: one(organization, {
+			fields: [companySourceDocs.organizationId],
+			references: [organization.id],
+		}),
+	})
+);
 
 export const evidenceRelations = relations(evidence, ({ one }) => ({
 	company: one(companies, {

@@ -60,6 +60,16 @@ export const EVIDENCE_KINDS = [
 ] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
+export const COMPANY_SOURCE_DOC_TYPES = [
+	"exa",
+	"website",
+	"shopify_probe",
+	"ats",
+	"press",
+	"curated",
+] as const;
+export type CompanySourceDocType = (typeof COMPANY_SOURCE_DOC_TYPES)[number];
+
 export const VERIFICATION_METHODS = [
 	"exact",
 	"fuzzy",
@@ -279,6 +289,21 @@ export const sdrSettings = pgTable("sdr_settings", {
 	...timestamps,
 });
 
+export interface DiscoveryPreFilteredBreakdown {
+	duplicateDomain: number;
+	duplicateUrl: number;
+	icpPreScreen: number;
+	unresolvedDomain: number;
+}
+
+export const DEFAULT_DISCOVERY_PRE_FILTERED_BREAKDOWN: DiscoveryPreFilteredBreakdown =
+	{
+		duplicateDomain: 0,
+		duplicateUrl: 0,
+		icpPreScreen: 0,
+		unresolvedDomain: 0,
+	};
+
 export const researchRuns = pgTable(
 	"research_runs",
 	{
@@ -291,6 +316,12 @@ export const researchRuns = pgTable(
 			.default("queued")
 			.notNull(),
 		querySet: jsonb("query_set").$type<string[]>().default([]).notNull(),
+		exaSuggestedCount: integer("exa_suggested_count").default(0).notNull(),
+		preFilteredCount: integer("pre_filtered_count").default(0).notNull(),
+		preFilteredBreakdown: jsonb("pre_filtered_breakdown")
+			.$type<DiscoveryPreFilteredBreakdown>()
+			.default(DEFAULT_DISCOVERY_PRE_FILTERED_BREAKDOWN)
+			.notNull(),
 		foundCount: integer("found_count").default(0).notNull(),
 		researchedCount: integer("researched_count").default(0).notNull(),
 		qualifiedCount: integer("qualified_count").default(0).notNull(),
@@ -343,6 +374,7 @@ export const companies = pgTable(
 			.default("medium")
 			.notNull(),
 		disqualifyReason: text("disqualify_reason"),
+		hidden: boolean("hidden").default(false).notNull(),
 		researchError: text("research_error"),
 		lastResearchedAt: timestamp("last_researched_at", { withTimezone: true }),
 		...timestamps,
@@ -390,6 +422,39 @@ export const evidence = pgTable(
 	(table) => [
 		index("evidence_org_company_idx").on(table.organizationId, table.companyId),
 		index("evidence_company_verified_idx").on(table.companyId, table.verified),
+	]
+);
+
+export const companySourceDocs = pgTable(
+	"company_source_docs",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		companyId: uuid("company_id")
+			.notNull()
+			.references(() => companies.id, { onDelete: "cascade" }),
+		url: text("url").notNull(),
+		sourceType: varchar("source_type", { length: 32 })
+			.$type<CompanySourceDocType>()
+			.notNull(),
+		title: text("title").notNull(),
+		text: text("text").notNull(),
+		fetchedAt: timestamp("fetched_at", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		...timestamps,
+	},
+	(table) => [
+		uniqueIndex("company_source_docs_company_url_uidx").on(
+			table.companyId,
+			table.url
+		),
+		index("company_source_docs_org_company_idx").on(
+			table.organizationId,
+			table.companyId
+		),
 	]
 );
 
@@ -508,7 +573,10 @@ export const threads = pgTable(
 			table.status,
 			table.lastMessageAt
 		),
-		index("threads_org_company_idx").on(table.organizationId, table.companyId),
+		uniqueIndex("threads_org_company_uidx").on(
+			table.organizationId,
+			table.companyId
+		),
 	]
 );
 
@@ -680,6 +748,8 @@ export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type Evidence = typeof evidence.$inferSelect;
 export type NewEvidence = typeof evidence.$inferInsert;
+export type CompanySourceDoc = typeof companySourceDocs.$inferSelect;
+export type NewCompanySourceDoc = typeof companySourceDocs.$inferInsert;
 export type QualificationCriterion = typeof qualificationCriteria.$inferSelect;
 export type NewQualificationCriterion =
 	typeof qualificationCriteria.$inferInsert;

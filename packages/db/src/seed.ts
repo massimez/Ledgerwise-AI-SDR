@@ -20,7 +20,7 @@ async function seed() {
 		console.log(`Owner account seeded: ${result.ownerEmail}`);
 		console.log(`Reviewer account seeded: ${result.reviewerEmail}`);
 		console.log(
-			"Sample companies seeded: Suncrest Botanics (85 A, Review Queue), Harbor & Loom (75 A, Active Thread), Trailhead Kettle Co. (80 A, Booked Call), Kova Athletic (65 B, Needs Human)"
+			"Exa-sourced companies seeded: 30 qualified US e-commerce brands (30 drafts in Review Queue, 0 seeded replies/meetings) + 7 disqualified benchmark cases"
 		);
 		console.log("Seeding completed successfully.");
 	} catch (error) {

@@ -2,7 +2,9 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
+export { and, count, eq, inArray, sql } from "drizzle-orm";
 export type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+export * as schema from "./schema";
 
 export interface DbOptions {
 	connectTimeout?: number;
@@ -136,4 +138,4 @@ export async function closeDb(): Promise<void> {
 	}
 }
 
-export * from "./seed-data";
+export * from "./sdr-defaults";
