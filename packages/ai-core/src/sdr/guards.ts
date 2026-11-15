@@ -1,6 +1,7 @@
 export {
 	countEmailWords,
 	detectBotQuestion,
+	detectHardOptOutIntent,
 	detectOptOutIntent,
 	detectOutboundPriceViolation,
 	stripQuotedReplyText,

@@ -1,7 +1,21 @@
-export { createSdrAgents, resolveSdrModelConfig } from "./agents/factory";
+export {
+	configureSdrLlmExecution,
+	createSdrAgents,
+	GEMINI_FALLBACK_MODELS,
+	resolveSdrModelConfig,
+	runSdrAgentWithFallback,
+	type SdrLlmExecutionPolicy,
+	SdrLlmFallbackError,
+	type SdrModelEnvOverrides,
+} from "./agents/factory";
 export {
 	DEFAULT_SDR_MODEL_FAST,
+	DEFAULT_SDR_MODEL_GEMINI,
 	DEFAULT_SDR_MODEL_SMART,
+	type DiscoveryBatchExtractionOutput,
+	type DiscoveryCandidateExtraction,
+	discoveryBatchExtractionSchema,
+	discoveryCandidateExtractionSchema,
 	type ExtractedEvidenceFact,
 	extractedEvidenceFactSchema,
 	type FactCheckJudgmentOutput,

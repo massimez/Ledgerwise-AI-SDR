@@ -3,7 +3,8 @@ import { db } from "@workspace/db";
 import { uploads } from "@workspace/db/schema";
 import { and, desc, eq, ilike } from "drizzle-orm";
 import { z } from "zod";
-import { AI_CONTEXT_KEYS, tenantAiContextSchema } from "../../contracts";
+import { tenantAiContextSchema } from "../../contracts";
+import { requireTenantToolContext } from "./tenant-context";
 
 const workspaceFilesInputSchema = z.object({
 	limit: z.number().int().min(1).max(50).optional().default(15),
@@ -53,15 +54,7 @@ export const workspaceFilesTool = createTool({
 	outputSchema: workspaceFilesOutputSchema,
 	requestContextSchema: tenantAiContextSchema,
 	execute: async (inputData, context) => {
-		const organizationId = context?.requestContext?.get(
-			AI_CONTEXT_KEYS.organizationId
-		);
-		const userId = context?.requestContext?.get(AI_CONTEXT_KEYS.userId);
-		if (!(organizationId && userId)) {
-			throw new Error(
-				"Tenant organizationId and userId are required in requestContext"
-			);
-		}
+		const { organizationId } = requireTenantToolContext(context);
 
 		const searchQuery = inputData.search?.trim();
 		const whereClause = searchQuery

@@ -4,9 +4,10 @@ import type {
 	SdrAiDisclosureMode,
 	SdrPlaybookConfig,
 } from "@workspace/db/schema/sdr";
-import { createSdrAgents, generatedReplySchema } from "../agents";
+import { generatedReplySchema, runSdrAgentWithFallback } from "../agents";
 import type { CalcomBookingResult } from "../integrations/calcom";
 import type { AgentRunTelemetry } from "../pipelines";
+import { formatThreadConversationSnippet } from "./classifier";
 import type { InboundReplyPipelineInput } from "./types";
 
 const WHITESPACE_SPLIT_REGEX = /\s+/u;
@@ -21,6 +22,11 @@ const COGS_OR_3PL_REGEX =
 	/\b(?:cogs|inventory|3pl|shipbob|red stag|deliverr|netsuite|quickbooks|qbo|xero)\b/iu;
 const STARTS_WITH_NEVER_REGEX = /^never\b/iu;
 const POLICY_PRICE_PHRASE_REGEX = /\bmonthly\s+(?:fee|retainer)\b/iu;
+const FAQ_TOPIC_MATCHERS: readonly [RegExp, RegExp][] = [
+	[ONBOARDING_REGEX, /\b(?:onboarding|how long|setup|two weeks)\b/iu],
+	[REPLACE_CPA_REGEX, /\b(?:replace|tax cpa|year-?end)\b/iu],
+	[SHOPIFY_OR_AMAZON_REGEX, /\b(?:shopify|amazon|payout|reconcil)/iu],
+];
 
 function matchPricingCopy(playbook: SdrPlaybookConfig): string {
 	const candidatePolicy = playbook.pricingPolicy.trim();
@@ -51,15 +57,16 @@ function matchFaqCopy(
 	cleanedBody: string,
 	playbook: SdrPlaybookConfig
 ): string | null {
-	const faqMatchers: [RegExp, number][] = [
-		[ONBOARDING_REGEX, 1],
-		[REPLACE_CPA_REGEX, 2],
-		[SHOPIFY_OR_AMAZON_REGEX, 0],
-	];
-	for (const [pattern, faqIndex] of faqMatchers) {
-		const answer = playbook.faq[faqIndex]?.answer;
-		if (pattern.test(cleanedBody) && answer) {
-			return answer;
+	for (const [inboundPattern, faqTopicPattern] of FAQ_TOPIC_MATCHERS) {
+		if (!inboundPattern.test(cleanedBody)) {
+			continue;
+		}
+		const matched = playbook.faq.find(
+			(item) =>
+				faqTopicPattern.test(item.question) || faqTopicPattern.test(item.answer)
+		);
+		if (matched?.answer) {
+			return matched.answer;
 		}
 	}
 	if (BOOKKEEPER_OR_CPA_REGEX.test(cleanedBody)) {
@@ -106,6 +113,7 @@ function selectPlaybookSnippet(params: {
 /** Build a deterministic guard-compliant reply covering bot disclosure, pricing deferral, and Cal.com slots. */
 export function buildDeterministicReplyCopy(options: {
 	aiDisclosureMode: SdrAiDisclosureMode;
+	alreadyBooked?: boolean;
 	booking: CalcomBookingResult | null;
 	classification: ReplyClassificationReport;
 	cleanedBody?: string;
@@ -113,6 +121,7 @@ export function buildDeterministicReplyCopy(options: {
 	contactName: string;
 	offeredSlots: OfferedSlot[];
 	playbook: SdrPlaybookConfig;
+	slotConflictTakenLabel?: string | null;
 	subject: string;
 }): { body: string; subject: string } {
 	const firstName =
@@ -139,6 +148,23 @@ export function buildDeterministicReplyCopy(options: {
 		);
 		paragraphs.push(
 			`Booked your walkthrough for ${chosenSlot?.formattedLabel ?? options.booking.startTimeIso}. Your calendar invite link is ${options.booking.meetingUrl}. Looking forward to speaking with ${options.companyName}!`
+		);
+		return { body: paragraphs.join("\n\n"), subject: cleanSubject };
+	}
+
+	if (options.alreadyBooked) {
+		paragraphs.push(
+			`Your discovery call for ${options.companyName} is already confirmed on our calendar—let us know if you need to adjust anything ahead of the chat!`
+		);
+		return { body: paragraphs.join("\n\n"), subject: cleanSubject };
+	}
+
+	if (options.slotConflictTakenLabel) {
+		const lines = options.offeredSlots
+			.map((slot, index) => `${index + 1}. ${slot.formattedLabel}`)
+			.join("\n");
+		paragraphs.push(
+			`Looks like ${options.slotConflictTakenLabel} was just taken on the calendar—here are three fresh 20-minute windows for ${options.companyName}:\n${lines}`
 		);
 		return { body: paragraphs.join("\n\n"), subject: cleanSubject };
 	}
@@ -171,7 +197,7 @@ export function buildDeterministicReplyCopy(options: {
 	};
 }
 
-/** Generate an LLM reply grounded in the playbook and offered slots, falling back to safe copy. */
+/** Generate an LLM reply across OpenRouter -> Gemini fallback, throwing if all providers fail. */
 export async function draftWithOptionalLlm(params: {
 	booking: CalcomBookingResult | null;
 	classification: ReplyClassificationReport;
@@ -180,46 +206,49 @@ export async function draftWithOptionalLlm(params: {
 	input: InboundReplyPipelineInput;
 	llmEnabled: boolean;
 	offeredSlots: OfferedSlot[];
-	smartModel: string;
+	requireLlm?: boolean;
+	smartModels: string[];
 	telemetry: AgentRunTelemetry[];
 }): Promise<{ body: string; subject: string }> {
-	if (!params.llmEnabled) {
+	if (!(params.llmEnabled || params.requireLlm)) {
 		return params.fallback;
 	}
 
-	const startedAt = Date.now();
-	try {
-		const { replyGeneratorAgent } = createSdrAgents({
-			smartModel: params.smartModel,
-		});
-		const prompt = [
-			`Company: ${params.input.companyName}`,
-			`Contact: ${params.input.contactName}`,
-			`AI Disclosure setting: ${params.input.aiDisclosureMode} (asksIfBot=${params.classification.asksIfBot})`,
-			`Approved Playbook: ${JSON.stringify(params.input.playbook)}`,
-			`Prospect reply: ${params.cleanedBody}`,
-			params.booking
-				? `Booking confirmed: ${params.booking.startTimeIso} link=${params.booking.meetingUrl}`
-				: `Offered slots: ${JSON.stringify(params.offeredSlots)}`,
-		].join("\n");
+	const recentSummary = formatThreadConversationSnippet(
+		params.input.recentMessages
+	);
+	const calendarStatus = (() => {
+		if (params.booking) {
+			return `Booking confirmed NOW: ${params.booking.startTimeIso} link=${params.booking.meetingUrl}`;
+		}
+		if (params.input.existingBookingUid) {
+			return `Existing booking already confirmed on calendar (uid=${params.input.existingBookingUid})`;
+		}
+		return `No meeting booked yet. Offered slots: ${JSON.stringify(params.offeredSlots)}`;
+	})();
 
-		const response = await replyGeneratorAgent.generate(prompt, {
-			structuredOutput: { schema: generatedReplySchema },
-		});
-		params.telemetry.push({
-			agentName: "reply_generator",
-			latencyMs: Date.now() - startedAt,
-			model: params.smartModel,
-			outputSummary: "LLM reply drafted",
-			status: "succeeded",
-			tokensIn: response.usage?.inputTokens ?? 0,
-			tokensOut: response.usage?.outputTokens ?? 0,
-		});
-		return {
-			body: response.object.body,
-			subject: response.object.subject,
-		};
-	} catch {
-		return params.fallback;
-	}
+	const prompt = [
+		`Company: ${params.input.companyName}`,
+		`Contact: ${params.input.contactName}`,
+		`AI Disclosure setting: ${params.input.aiDisclosureMode} (asksIfBot=${params.classification.asksIfBot})`,
+		`Approved Playbook: ${JSON.stringify(params.input.playbook)}`,
+		`Recent conversation:\n${recentSummary}`,
+		`Latest prospect reply: ${params.cleanedBody}`,
+		calendarStatus,
+	].join("\n");
+
+	const drafted = await runSdrAgentWithFallback({
+		agentKey: "replyGeneratorAgent",
+		models: params.smartModels,
+		prompt,
+		schema: generatedReplySchema,
+		summarizeOutput: () => "LLM reply drafted",
+		telemetry: params.telemetry,
+		telemetryAgentName: "reply_generator",
+	});
+
+	return {
+		body: drafted.body,
+		subject: drafted.subject,
+	};
 }

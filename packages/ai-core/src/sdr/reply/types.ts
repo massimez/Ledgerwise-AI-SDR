@@ -5,6 +5,8 @@ import type {
 	SdrAiDisclosureMode,
 	SdrAutopilotMode,
 	SdrPlaybookConfig,
+	ThreadAiMode,
+	ThreadStatus,
 } from "@workspace/db/schema/sdr";
 import type { CalcomBookingResult } from "../integrations/calcom";
 import type { AgentRunTelemetry } from "../pipelines";
@@ -16,6 +18,11 @@ export type ReplyActionDecision =
 	| "escalate_to_human"
 	| "ooo_pause";
 
+export interface InboundThreadMessageContext {
+	bodyText: string;
+	direction: "inbound" | "outbound";
+}
+
 export interface InboundReplyPipelineInput {
 	aiDisclosureMode: SdrAiDisclosureMode;
 	aiReplyCount: number;
@@ -25,14 +32,22 @@ export interface InboundReplyPipelineInput {
 	companyName: string;
 	contactEmail: string;
 	contactName: string;
+	existingBookingUid?: string | null;
+	googleApiKey?: string;
 	inboundBody: string;
 	openrouterApiKey?: string;
 	playbook: SdrPlaybookConfig;
 	previousOfferedSlots: OfferedSlot[];
 	prospectTimezone?: string;
+	recentMessages?: InboundThreadMessageContext[];
+	requireLlm?: boolean;
+	sdrGeminiModel?: string;
 	sdrModelFast?: string;
 	sdrModelSmart?: string;
 	subject: string;
+	threadAiMode?: ThreadAiMode;
+	threadStatus?: ThreadStatus;
+	unavailableSlotIsos?: string[];
 }
 
 export interface InboundReplyPipelineOutput {
@@ -46,6 +61,7 @@ export interface InboundReplyPipelineOutput {
 		body: string;
 		subject: string;
 	} | null;
+	slotConflictTakenLabel?: string | null;
 	telemetry: AgentRunTelemetry[];
 }
 

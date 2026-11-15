@@ -25,6 +25,7 @@ import { workspaceContextTool } from "./mastra/tools/workspace-context-tool";
 import { workspaceFilesTool } from "./mastra/tools/workspace-files-tool";
 import { workspaceMembersTool } from "./mastra/tools/workspace-members-tool";
 import { workspaceBriefWorkflow } from "./mastra/workflows/workspace-brief-workflow";
+import { createSdrAgents, resolveSdrModelConfig } from "./sdr/agents";
 
 export interface MastraRuntimeConfig {
 	databaseUrl?: string;
@@ -34,6 +35,8 @@ export interface MastraRuntimeConfig {
 	embeddingModel?: string;
 	/** Enable pgvector semantic recall (requires an API key for the embedding provider). Defaults to true. */
 	enableSemanticRecall?: boolean;
+	/** Register internal SDR agents for Mastra Studio inspection (excluded from workspace chat runtime by default). */
+	includeSdrAgents?: boolean;
 	schemaName?: string;
 }
 
@@ -123,6 +126,17 @@ export function createMastraRuntime(
 	const agents: Record<string, Agent> = {
 		[DEFAULT_AI_AGENT_ID]: workspaceAssistant,
 	};
+
+	if (config.includeSdrAgents) {
+		const sdrModelConfig = resolveSdrModelConfig();
+		const sdrAgents = createSdrAgents({
+			fastModel: sdrModelConfig.fastModel,
+			smartModel: sdrModelConfig.smartModel,
+		});
+		for (const agent of Object.values(sdrAgents)) {
+			agents[agent.id] = agent;
+		}
+	}
 
 	// Mastra requires at least one exporter, so tracing is only enabled when
 	// PostgreSQL storage is active and background storage init is not disabled.

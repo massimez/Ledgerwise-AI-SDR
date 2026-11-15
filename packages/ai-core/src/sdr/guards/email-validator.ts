@@ -5,11 +5,11 @@ import type {
 import {
 	countEmailWords,
 	detectOutboundPriceViolation,
+	hasUrlLink,
 	verifyBotDisclosure,
 } from "./content-guards";
 import { normalizeTextForMatch } from "./quote-verifier";
 
-const URL_IN_EMAIL_REGEX = /\b(?:https?:\/\/|www\.)\S+/iu;
 const PHYSICAL_ADDRESS_REGEX =
 	/\b\d{1,5}\s+[a-z0-9.\s]{2,40}\s(?:st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|way|suite|ste|floor|fl)\b|\b[a-z\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/iu;
 
@@ -32,6 +32,7 @@ export interface ReplyValidationInput {
 	asksIfBot: boolean;
 	body: string;
 	citedSpans?: string[];
+	subject?: string;
 }
 
 /**
@@ -56,7 +57,7 @@ export function validateFirstEmailConstraints(
 		);
 	}
 
-	const linkCheck = !URL_IN_EMAIL_REGEX.test(combinedText);
+	const linkCheck = !hasUrlLink(combinedText);
 	if (!linkCheck) {
 		reasons.push("First email must not contain URLs or links.");
 	}
@@ -132,7 +133,10 @@ export function validateReplyConstraints(input: ReplyValidationInput): {
 		);
 	}
 
-	const priceViolation = detectOutboundPriceViolation(input.body, citedSpans);
+	const combinedText = input.subject
+		? `${input.subject}\n${input.body}`
+		: input.body;
+	const priceViolation = detectOutboundPriceViolation(combinedText, citedSpans);
 	const priceCheck = priceViolation === null;
 	if (!priceCheck) {
 		reasons.push(`Reply quotes prohibited pricing: "${priceViolation}".`);

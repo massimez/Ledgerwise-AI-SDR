@@ -1,10 +1,6 @@
-export interface RawSourceDocument {
-	fetchedAt: string;
-	sourceType: "exa" | "website" | "shopify_probe" | "ats" | "press" | "curated";
-	text: string;
-	title: string;
-	url: string;
-}
+import type { RawSourceDocument } from "../shared/types";
+
+export type { RawSourceDocument } from "../shared/types";
 
 export interface DiscoveredProspectCandidate {
 	channels: string[];
@@ -13,6 +9,8 @@ export interface DiscoveredProspectCandidate {
 	contactLastName?: string;
 	contactRole?: string;
 	domain: string;
+	evidenceQuote?: string;
+	evidenceUrl?: string;
 	location?: string;
 	name: string;
 	seedDocuments?: RawSourceDocument[];

@@ -1,5 +1,22 @@
 export {
+	buildDiscoveryExcludeDomains,
+	buildDiscoveryQueryVariations,
+	buildDiscoverySearchQuery,
+	calculateExaSearchCostUsd,
+	configureExaTelemetry,
+	type DiscoverProspectsOptions,
+	type DiscoveryBatchResult,
+	type DiscoveryBatchSummary,
+	type DiscoverySignalPreset,
+	type DiscoverySkipReason,
+	discoverProspectBatch,
 	discoverProspectCandidates,
+	doesCompanyNameMatchHostname,
+	type ExaSearchTelemetryEvent,
+	isThirdPartySignalHost,
+	resolveDiscoveryStartPublishedDate,
+	type SkippedDiscoveryResult,
+	sanitizeCompanyDomain,
 	searchExaSources,
 } from "./exa-client";
 export {
@@ -16,3 +33,8 @@ export {
 	probeAtsBoards,
 	probeCompanyWebPresence,
 } from "./source-gatherer";
+export {
+	assertPublicHttpUrl,
+	fetchWithSsrfGuard,
+	SsrfBlockedError,
+} from "./ssrf-guard";

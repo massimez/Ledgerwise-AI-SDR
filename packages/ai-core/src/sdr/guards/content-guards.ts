@@ -2,25 +2,30 @@ const LINE_SPLIT_REGEX = /\r?\n/u;
 const SPACE_SPLIT_REGEX = /\s+/u;
 const PRICE_DOLLAR_REGEX = /\$\s?\d[\d,]*(?:\.\d{1,2})?\s?(?:k|m|b)?/giu;
 const PRICE_PHRASE_REGEX =
-	/\b(?:\d+(?:\.\d+)?\s*(?:per month|\/\s?mo|a month|monthly)|flat\s+(?:monthly\s+)?fee|monthly\s+(?:fee|retainer)|starts?\s+at\s+\$\d|starting\s+at\s+\$\d|retainer\s+is|costs?\s+\$?\d|pricing\s+(?:is|starts)\s+at\s+\$\d|rate\s+of\s+\$\d)\b/iu;
+	/\b(?:\d[\d,]*(?:\.\d+)?\s*(?:per month|\/\s?mo|a month|monthly)|flat\s+(?:monthly\s+)?fee|monthly\s+(?:fee|retainer)|starts?\s+at\s+\$\d|starting\s+at\s+\$\d|retainer\s+is|costs?\s+\$?\d|pricing\s+(?:is|starts)\s+at\s+\$\d|rate\s+of\s+\$\d)\b/iu;
+const URL_IN_EMAIL_REGEX = /\b(?:https?:\/\/|www\.)\S+/iu;
 const NEGATED_OPT_OUT_REGEX =
 	/\bnot interested in (?:waiting|missing|delaying|wasting|paying more)\b/iu;
 
-const OPT_OUT_PATTERNS: RegExp[] = [
+const HARD_OPT_OUT_PATTERNS: RegExp[] = [
 	/\bunsubscribe\b/iu,
 	/\bopt[\s-]*out\b/iu,
-	/\b(?:remove|take)\s+(?:me|us)\s*(?:from|off)?\b/iu,
 	/\bstop\s+(?:emailing|contacting|sending|reaching out|messaging|following up)\b/iu,
 	/\b(?:do not|don'?t)\s+(?:contact|email|reach out|message|follow up)\b/iu,
+	/\bplease stop\b/iu,
+	/\bleave me alone\b/iu,
+	/\bcease and desist\b/iu,
+	/^stop[.!]?$/iu,
+];
+
+const SOFT_OPT_OUT_PATTERNS: RegExp[] = [
+	/\b(?:remove|take)\s+(?:me|us)\s*(?:from|off)?\b/iu,
 	/\bno thanks?\b/iu,
 	/\bno thank you\b/iu,
 	/\bnot interested\b/iu,
 	/\bno longer interested\b/iu,
 	/\b(?:please|we'?ll|going to)\s+pass\b/iu,
 	/\bnot a (?:good )?fit\b/iu,
-	/\bplease stop\b/iu,
-	/\bleave me alone\b/iu,
-	/\bcease and desist\b/iu,
 ];
 
 const BOT_QUESTION_PATTERNS: RegExp[] = [
@@ -76,38 +81,29 @@ export function detectOutboundPriceViolation(
 		return phraseMatch[0];
 	}
 
-	const dollarMatches = sanitized.matchAll(PRICE_DOLLAR_REGEX);
-	for (const match of dollarMatches) {
-		const index = match.index ?? 0;
-		const surrounding = sanitized
-			.slice(Math.max(0, index - 24), index + match[0].length + 28)
-			.toLowerCase();
-		const isFundingOrRevenueFact =
-			surrounding.includes("raised") ||
-			surrounding.includes("funding") ||
-			surrounding.includes("seed") ||
-			surrounding.includes("series ") ||
-			surrounding.includes("gmv") ||
-			surrounding.includes("revenue");
-		if (!isFundingOrRevenueFact) {
-			return match[0];
-		}
+	const dollarMatch = PRICE_DOLLAR_REGEX.exec(sanitized);
+	if (dollarMatch) {
+		return dollarMatch[0];
 	}
 
 	return null;
 }
 
-/** Detect hard opt-out / unsubscribe / stop-contacting language with negation safety. */
-export function detectOptOutIntent(text: string): {
-	matched: boolean;
-	reason: string | null;
-} {
+/** Detect whether plain-text email copy contains an http(s) or www URL. */
+export function hasUrlLink(text: string): boolean {
+	return URL_IN_EMAIL_REGEX.test(text);
+}
+
+function matchOptOutPatterns(
+	text: string,
+	patterns: RegExp[]
+): { matched: boolean; reason: string | null } {
 	const cleaned = stripQuotedReplyText(text);
 	if (NEGATED_OPT_OUT_REGEX.test(cleaned)) {
 		return { matched: false, reason: null };
 	}
 
-	for (const pattern of OPT_OUT_PATTERNS) {
+	for (const pattern of patterns) {
 		const match = pattern.exec(cleaned);
 		if (match) {
 			return { matched: true, reason: match[0].toLowerCase() };
@@ -115,6 +111,26 @@ export function detectOptOutIntent(text: string): {
 	}
 
 	return { matched: false, reason: null };
+}
+
+/** Deterministic safety net for unambiguous explicit opt-out / unsubscribe / stop demands. */
+export function detectHardOptOutIntent(text: string): {
+	matched: boolean;
+	reason: string | null;
+} {
+	return matchOptOutPatterns(text, HARD_OPT_OUT_PATTERNS);
+}
+
+/** Detect opt-out language (both explicit hard stops and softer declines for offline fallback). */
+export function detectOptOutIntent(text: string): {
+	matched: boolean;
+	reason: string | null;
+} {
+	const hardMatch = matchOptOutPatterns(text, HARD_OPT_OUT_PATTERNS);
+	if (hardMatch.matched) {
+		return hardMatch;
+	}
+	return matchOptOutPatterns(text, SOFT_OPT_OUT_PATTERNS);
 }
 
 /** Detect whether the prospect directly asked if they are speaking to an AI or bot. */

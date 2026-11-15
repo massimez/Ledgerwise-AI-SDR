@@ -1,15 +1,18 @@
-import { searchExaSources } from "./exa-client";
-import { fetchPageTextSafe, normalizeDomain } from "./html-fetcher";
 import {
-	CURATED_US_ECOMMERCE_PROSPECTS,
-	type RawSourceDocument,
-} from "./sandbox-fixtures";
+	extractVerifiedDomainEmailsFromDocs,
+	normalizeDomain,
+} from "../shared/domain";
+import type { RawSourceDocument, SdrPipelineLogger } from "../shared/types";
+import { searchExaSources } from "./exa-client";
+import { fetchPageTextSafe } from "./html-fetcher";
+import { CURATED_US_ECOMMERCE_PROSPECTS } from "./sandbox-fixtures";
 
 const NON_SLUG_CHARS_REGEX = /[^a-z0-9-]/gu;
 
 /** Check public Greenhouse, Lever, and Ashby job boards for finance/accounting openings. */
 export async function probeAtsBoards(
-	companySlug: string
+	companySlug: string,
+	options?: { logger?: SdrPipelineLogger }
 ): Promise<RawSourceDocument[]> {
 	const slug = companySlug.toLowerCase().replace(NON_SLUG_CHARS_REGEX, "");
 	if (slug.length < 2) {
@@ -35,17 +38,28 @@ export async function probeAtsBoards(
 			});
 		}
 	}
+	options?.logger?.debug?.("SdrSourceGatherer", "Completed ATS board probes", {
+		hitUrls: docs.map((d) => d.url),
+		probedCount: urls.length,
+		slug,
+	});
 	return docs;
 }
 
-/** Probe a brand's domain for Shopify storefront signals and About page text. */
+/** Probe a brand's domain for Shopify storefront signals, About, Contact, and Privacy pages. */
 export async function probeCompanyWebPresence(
-	domain: string
+	domain: string,
+	options?: { logger?: SdrPipelineLogger }
 ): Promise<RawSourceDocument[]> {
 	const bare = normalizeDomain(domain);
 	const targets = [
 		`https://${bare}/pages/about`,
 		`https://${bare}/pages/about-us`,
+		`https://${bare}/pages/contact`,
+		`https://${bare}/pages/contact-us`,
+		`https://${bare}/contact`,
+		`https://${bare}/pages/privacy-policy`,
+		`https://${bare}/policies/privacy-policy`,
 		`https://${bare}`,
 		`https://${bare}/products.json?limit=3`,
 	];
@@ -64,6 +78,19 @@ export async function probeCompanyWebPresence(
 			});
 		}
 	}
+	options?.logger?.debug?.(
+		"SdrSourceGatherer",
+		"Completed web presence probes",
+		{
+			domain: bare,
+			hits: docs.map((d) => ({
+				sourceType: d.sourceType,
+				textLength: d.text.length,
+				url: d.url,
+			})),
+			probedTargetsCount: targets.length,
+		}
+	);
 	return docs;
 }
 
@@ -75,42 +102,69 @@ export async function gatherCompanyResearchDocuments(options: {
 	companyName: string;
 	domain: string;
 	exaApiKey?: string;
-	skipLiveNetwork?: boolean;
+	logger?: SdrPipelineLogger;
 }): Promise<RawSourceDocument[]> {
 	const bareDomain = normalizeDomain(options.domain);
 	const curated = CURATED_US_ECOMMERCE_PROSPECTS.find(
 		(item) => normalizeDomain(item.domain) === bareDomain
 	);
 
-	if (options.skipLiveNetwork) {
-		return curated?.seedDocuments ?? [];
-	}
-
 	const slug = bareDomain.split(".")[0] ?? "";
-	const [exaDocs, webDocs, atsDocs] = await Promise.all([
+	const researchQuery = `"${options.companyName}" OR site:${bareDomain} ecommerce Shopify Amazon accounting finance`;
+	const peopleQuery = `"${options.companyName}" ${bareDomain} (Founder OR "Co-Founder" OR CEO OR COO OR CFO OR "Head of Finance" OR Controller OR "VP of Finance")`;
+	const [exaDocs, peopleDocs, webDocs, atsDocs] = await Promise.all([
 		searchExaSources({
 			apiKey: options.exaApiKey,
+			logger: options.logger,
 			numResults: 5,
-			query: `"${options.companyName}" OR site:${bareDomain} ecommerce Shopify Amazon accounting finance`,
+			purpose: "company_research",
+			query: researchQuery,
 		}),
-		probeCompanyWebPresence(bareDomain),
-		probeAtsBoards(slug),
+		searchExaSources({
+			allowShortText: true,
+			apiKey: options.exaApiKey,
+			category: "people",
+			logger: options.logger,
+			numResults: 5,
+			purpose: "people_search",
+			query: peopleQuery,
+		}),
+		probeCompanyWebPresence(bareDomain, { logger: options.logger }),
+		probeAtsBoards(slug, { logger: options.logger }),
 	]);
 
-	const combined = [...exaDocs, ...webDocs, ...atsDocs];
+	const combined = [...exaDocs, ...peopleDocs, ...webDocs, ...atsDocs];
+	const detectedDomainEmails = extractVerifiedDomainEmailsFromDocs(
+		combined,
+		bareDomain
+	);
+
+	options.logger?.info(
+		"SdrSourceGatherer",
+		"Gathered research source documents",
+		{
+			atsCount: atsDocs.length,
+			companyName: options.companyName,
+			detectedDomainEmails,
+			domain: bareDomain,
+			docs: combined.map((doc) => ({
+				sourceType: doc.sourceType,
+				textLength: doc.text.length,
+				url: doc.url,
+			})),
+			exaCount: exaDocs.length,
+			peopleCount: peopleDocs.length,
+			totalCount: combined.length,
+			webCount: webDocs.length,
+		}
+	);
+
 	if (combined.length > 0) {
 		return combined;
 	}
 
-	return (
-		curated?.seedDocuments ?? [
-			{
-				fetchedAt: new Date().toISOString(),
-				sourceType: "website",
-				text: `${options.companyName} (${bareDomain}) operates an online storefront serving customers in the United States.`,
-				title: `${options.companyName} Website`,
-				url: `https://${bareDomain}/about`,
-			},
-		]
-	);
+	const curatedFallback = options.exaApiKey
+		? undefined
+		: curated?.seedDocuments;
+	return curatedFallback ?? [];
 }

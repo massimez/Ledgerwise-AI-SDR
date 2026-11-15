@@ -4,10 +4,10 @@ import type {
 	MessageCitation,
 } from "@workspace/db/schema/sdr";
 import {
-	createSdrAgents,
 	factCheckJudgmentSchema,
 	firstEmailDraftSchema,
 	resolveSdrModelConfig,
+	runSdrAgentWithFallback,
 } from "../agents";
 import { validateFirstEmailConstraints } from "../guards";
 import type {
@@ -77,93 +77,72 @@ function buildDeterministicFirstEmail(options: {
 async function generateLlmDraftAttempt(params: {
 	attempt: number;
 	companyName: string;
-	fastModel: string;
 	feedbackNote: string;
 	firstName?: string | null;
 	instruction?: string;
 	playbookPitch?: string;
-	smartModel: string;
+	smartModels: string[];
 	telemetry: AgentRunTelemetry[];
 	verifiedEvidence: VerifiedEvidenceCandidate[];
 }) {
-	const startedAt = Date.now();
-	try {
-		const { firstEmailWriterAgent } = createSdrAgents({
-			fastModel: params.fastModel,
-			smartModel: params.smartModel,
-		});
-		const evidenceText = params.verifiedEvidence
-			.slice(0, 5)
-			.map(
-				(item) =>
-					`- evidenceId="${item.id}" type=${item.factType} claim="${item.claim}" quote="${item.quote}"`
-			)
-			.join("\n");
+	const evidenceText = params.verifiedEvidence
+		.slice(0, 5)
+		.map(
+			(item) =>
+				`- evidenceId="${item.id}" type=${item.factType} claim="${item.claim}" quote="${item.quote}"`
+		)
+		.join("\n");
 
-		const prompt = [
-			`Company: ${params.companyName}`,
-			`Recipient first name: ${params.firstName ?? "there"}`,
-			params.playbookPitch ? `Playbook angle: ${params.playbookPitch}` : "",
-			params.instruction ? `Reviewer instruction: ${params.instruction}` : "",
-			params.feedbackNote
-				? `Fix these validation errors: ${params.feedbackNote}`
-				: "",
-			`Verified evidence:\n${evidenceText}`,
-		]
-			.filter(Boolean)
-			.join("\n");
+	const prompt = [
+		`Company: ${params.companyName}`,
+		`Recipient first name: ${params.firstName ?? "there"}`,
+		params.playbookPitch ? `Playbook angle: ${params.playbookPitch}` : "",
+		params.instruction ? `Reviewer instruction: ${params.instruction}` : "",
+		params.feedbackNote
+			? `Fix these validation errors: ${params.feedbackNote}`
+			: "",
+		`Verified evidence:\n${evidenceText}`,
+	]
+		.filter(Boolean)
+		.join("\n");
 
-		const response = await firstEmailWriterAgent.generate(prompt, {
-			structuredOutput: { schema: firstEmailDraftSchema },
-		});
-		params.telemetry.push({
-			agentName: "first_email_writer",
-			latencyMs: Date.now() - startedAt,
-			model: params.smartModel,
-			outputSummary: `Attempt ${params.attempt}: ${response.object.citations.length} citations`,
-			status: "succeeded",
-			tokensIn: response.usage?.inputTokens ?? 0,
-			tokensOut: response.usage?.outputTokens ?? 0,
-		});
-		return response.object;
-	} catch {
-		return null;
-	}
+	return await runSdrAgentWithFallback({
+		agentKey: "firstEmailWriterAgent",
+		models: params.smartModels,
+		prompt,
+		schema: firstEmailDraftSchema,
+		summarizeOutput: (draft) =>
+			`Attempt ${params.attempt}: ${draft.citations.length} citations`,
+		telemetry: params.telemetry,
+		telemetryAgentName: "first_email_writer",
+	});
 }
 
 async function runFactCheckAttempt(params: {
 	body: string;
-	fastModel: string;
+	fastModels: string[];
 	subject: string;
 	telemetry: AgentRunTelemetry[];
 	verifiedEvidence: VerifiedEvidenceCandidate[];
 }): Promise<{ judgePassed: boolean; unsupportedClaims: string[] }> {
-	const judgeStarted = Date.now();
-	try {
-		const { factCheckJudgeAgent } = createSdrAgents({
-			fastModel: params.fastModel,
-		});
-		const evidenceSummary = params.verifiedEvidence
-			.map((item) => `[${item.id}] ${item.quote}`)
-			.join("\n");
-		const judgeResult = await factCheckJudgeAgent.generate(
-			`Subject: ${params.subject}\nBody:\n${params.body}\n\nVerified evidence:\n${evidenceSummary}`,
-			{ structuredOutput: { schema: factCheckJudgmentSchema } }
-		);
-		const { passed, unsupportedClaims } = judgeResult.object;
-		params.telemetry.push({
-			agentName: "fact_check_judge",
-			latencyMs: Date.now() - judgeStarted,
-			model: params.fastModel,
-			outputSummary: passed ? "passed" : "flagged",
-			status: "succeeded",
-			tokensIn: judgeResult.usage?.inputTokens ?? 0,
-			tokensOut: judgeResult.usage?.outputTokens ?? 0,
-		});
-		return { judgePassed: passed, unsupportedClaims };
-	} catch {
-		return { judgePassed: true, unsupportedClaims: [] };
-	}
+	const evidenceSummary = params.verifiedEvidence
+		.map((item) => `[${item.id}] ${item.quote}`)
+		.join("\n");
+
+	const judged = await runSdrAgentWithFallback({
+		agentKey: "factCheckJudgeAgent",
+		models: params.fastModels,
+		prompt: `Subject: ${params.subject}\nBody:\n${params.body}\n\nVerified evidence:\n${evidenceSummary}`,
+		schema: factCheckJudgmentSchema,
+		summarizeOutput: (result) => (result.passed ? "passed" : "flagged"),
+		telemetry: params.telemetry,
+		telemetryAgentName: "fact_check_judge",
+	});
+
+	return {
+		judgePassed: judged.passed,
+		unsupportedClaims: judged.unsupportedClaims,
+	};
 }
 
 /**
@@ -174,9 +153,12 @@ export async function generateVerifiedFirstEmail(options: {
 	companyName: string;
 	evidence: VerifiedEvidenceCandidate[];
 	firstName?: string | null;
+	googleApiKey?: string;
 	instruction?: string;
 	openrouterApiKey?: string;
 	playbookPitch?: string;
+	requireLlm?: boolean;
+	sdrGeminiModel?: string;
 	sdrModelFast?: string;
 	sdrModelSmart?: string;
 }): Promise<VerifiedFirstEmailPipelineResult> {
@@ -184,7 +166,9 @@ export async function generateVerifiedFirstEmail(options: {
 	const verifiedIds = new Set(verifiedEvidence.map((item) => item.id));
 	const telemetry: AgentRunTelemetry[] = [];
 	const modelConfig = resolveSdrModelConfig({
+		googleApiKey: options.googleApiKey,
 		openrouterApiKey: options.openrouterApiKey,
+		sdrGeminiModel: options.sdrGeminiModel,
 		sdrModelFast: options.sdrModelFast,
 		sdrModelSmart: options.sdrModelSmart,
 	});
@@ -195,7 +179,9 @@ export async function generateVerifiedFirstEmail(options: {
 		firstName: options.firstName,
 		instruction: options.instruction,
 	});
-	const useLlm = modelConfig.llmEnabled && verifiedEvidence.length > 0;
+	const useLlm =
+		(modelConfig.llmEnabled || Boolean(options.requireLlm)) &&
+		verifiedEvidence.length > 0;
 
 	const tryValidate = async (
 		attempt: number,
@@ -205,18 +191,17 @@ export async function generateVerifiedFirstEmail(options: {
 		| { ok: true; result: VerifiedFirstEmailPipelineResult }
 	> => {
 		const candidate = useLlm
-			? ((await generateLlmDraftAttempt({
+			? await generateLlmDraftAttempt({
 					attempt,
 					companyName: options.companyName,
-					fastModel: modelConfig.fastModel,
 					feedbackNote,
 					firstName: options.firstName,
 					instruction: options.instruction,
 					playbookPitch: options.playbookPitch,
-					smartModel: modelConfig.smartModel,
+					smartModels: modelConfig.smartModels,
 					telemetry,
 					verifiedEvidence,
-				})) ?? baseDraft)
+				})
 			: baseDraft;
 
 		const deterministic = validateFirstEmailConstraints({
@@ -229,10 +214,10 @@ export async function generateVerifiedFirstEmail(options: {
 			return { feedback: deterministic.reasons.join("; "), ok: false };
 		}
 
-		const judge = modelConfig.llmEnabled
+		const judge = useLlm
 			? await runFactCheckAttempt({
 					body: candidate.body,
-					fastModel: modelConfig.fastModel,
+					fastModels: modelConfig.fastModels,
 					subject: candidate.subject,
 					telemetry,
 					verifiedEvidence,

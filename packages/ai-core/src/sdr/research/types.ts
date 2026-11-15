@@ -1,5 +1,12 @@
 import type { ExtractedEvidenceFact } from "../agents";
 import type { RubricEvaluationResult } from "../scoring";
+import type { AgentRunTelemetry } from "../shared/types";
+
+export type {
+	AgentRunTelemetry,
+	RawSourceDocument,
+	SdrPipelineLogger,
+} from "../shared/types";
 
 export interface VerifiedEvidenceCandidate {
 	claim: string;
@@ -12,22 +19,16 @@ export interface VerifiedEvidenceCandidate {
 	verified: boolean;
 }
 
-export interface AgentRunTelemetry {
-	agentName: string;
-	latencyMs: number;
-	model: string;
-	outputSummary: string;
-	status: "succeeded" | "fallback";
-	tokensIn: number;
-	tokensOut: number;
-}
-
 export interface CompanyResearchPipelineResult {
 	channels: string[];
 	contact?: {
 		email?: string;
+		emailStatus?: "verified" | "guessed" | "unknown";
 		firstName?: string;
+		isDecisionMaker?: boolean;
 		lastName?: string;
+		linkedinUrl?: string;
+		persona?: "founder" | "coo" | "finance" | "other";
 		role?: string;
 	};
 	evidence: VerifiedEvidenceCandidate[];

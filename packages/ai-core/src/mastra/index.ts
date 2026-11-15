@@ -23,7 +23,7 @@ const embeddingModel =
 	process.env.MASTRA_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
 
 /**
- * Mastra CLI / Studio entrypoint (`bun run dev:ai`).
+ * Mastra CLI / Studio entrypoint (`bun run dev:ai` / `bun run mastra:studio`).
  */
 export const { mastra } = createMastraRuntime({
 	databaseUrl: process.env.DATABASE_URL,
@@ -35,5 +35,6 @@ export const { mastra } = createMastraRuntime({
 	enableSemanticRecall:
 		isSupportedEmbeddingModel(embeddingModel) &&
 		hasAiProviderApiKey(embeddingModel, process.env),
+	includeSdrAgents: true,
 	schemaName: process.env.MASTRA_DB_SCHEMA || DEFAULT_MASTRA_DB_SCHEMA,
 });
