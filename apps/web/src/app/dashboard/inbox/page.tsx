@@ -11,120 +11,39 @@ import {
 	Loader2,
 	Lock,
 	Send,
-	ShieldCheck,
 	Sparkles,
+	User,
 	UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type SdrThreadListEntry,
+	useSdrThreadDetail,
+	useSdrThreadMutations,
+	useSdrThreads,
+} from "@/lib/sdr-hooks";
 import type {
 	SdrCompanySummary,
 	SdrMeetingItem,
 	SdrMessageItem,
 	SdrThreadItem,
 	ThreadStatus,
-} from "@/lib/sdr-fallback-data";
-import {
-	useSdrThreadDetail,
-	useSdrThreadMutations,
-	useSdrThreads,
-} from "@/lib/sdr-hooks";
+} from "@/lib/sdr-types";
 import { ThreadStateBadge, TierBadge } from "../_components/sdr-badges";
+import { SimulateReplyDialog } from "./_components/simulate-reply-dialog";
 
 const WHITESPACE_SPLIT_REGEX = /\s+/u;
 
-const SIMULATOR_PRESETS = [
-	{
-		bodyText:
-			"Sounds relevant! Quick question — are you an AI bot? Also, how much do you charge per month for a Shopify + Amazon brand?",
-		description:
-			"Tests honest bot disclosure (when_asked) + strict zero-pricing guard + Cal.com slot offer.",
-		label: "Ask Pricing + 'Are you a bot?'",
-		preset: "pricing" as const,
-	},
-	{
-		bodyText:
-			"We're actually struggling with our 3PL inventory and Shopify payout reconciliation right now. What times do you have open next week?",
-		description:
-			"Tests high-confidence interest classification and timezone-aware Cal.com slot proposal.",
-		label: "Interested · Ask for Call Times",
-		preset: "meeting_request" as const,
-	},
-	{
-		bodyText:
-			"2:00 PM works great for me — let's lock that time in on the calendar.",
-		description:
-			"Tests slot confirmation, automatic meeting booking, and transition to Booked state.",
-		label: "Confirm Time Slot (Books Call)",
-		preset: "slot_pick" as const,
-	},
-	{
-		bodyText:
-			"Can your team file international VAT registration in Germany and handle GAAP certified audit opinions?",
-		description:
-			"Tests out-of-playbook question detection → pauses AI and escalates thread to Needs You.",
-		label: "Out-of-Playbook Question (Escalates)",
-		preset: "outside_playbook" as const,
-	},
-	{
-		bodyText:
-			"We're all set internally — please unsubscribe me and remove me from your list.",
-		description:
-			"Tests hard opt-out regex → adds email to suppressions table and permanently locks thread.",
-		label: "Opt-Out / 'Not Interested'",
-		preset: "opt_out" as const,
-	},
-] as const;
-
-interface ThreadListEntry {
-	company: SdrCompanySummary | null;
-	contact: SdrCompanySummary["primaryContact"];
-	latestMessage: SdrMessageItem | null;
-	messageCount: number;
-	thread: SdrThreadItem;
-}
-
 function getMessageCardClasses(msg: SdrMessageItem): string {
 	if (msg.direction === "inbound") {
-		return "border-border bg-background/80";
+		return "border-border/70 bg-background/60";
 	}
 	if (msg.author === "ai") {
-		return "border-primary/25 bg-primary/5";
+		return "border-border/70 bg-muted/20";
 	}
 	return "border-indigo-500/25 bg-indigo-500/5";
-}
-
-function getSenderBadgeClasses(msg: SdrMessageItem): string {
-	if (msg.direction === "inbound") {
-		return "bg-muted text-foreground";
-	}
-	if (msg.author === "ai") {
-		return "bg-primary/15 text-primary";
-	}
-	return "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300";
-}
-
-function getConfidenceTierLabel(confidence: number): {
-	className: string;
-	label: string;
-} {
-	if (confidence >= 0.85) {
-		return {
-			className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-			label: "High",
-		};
-	}
-	if (confidence >= 0.75) {
-		return {
-			className: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
-			label: "Medium",
-		};
-	}
-	return {
-		className: "bg-rose-500/15 text-rose-700 dark:text-rose-300",
-		label: "Low (<75%)",
-	};
 }
 
 function buildSafeSuggestedHumanReply(options: {
@@ -154,102 +73,102 @@ function buildSafeSuggestedHumanReply(options: {
 	return `Hi ${firstName},\n\nThanks for following up—I'd be glad to walk through how Ledgerwise handles multi-channel Shopify and Amazon accrual closes and landed COGS for ${options.companyName}.\n\nDo you have 15 minutes this week for a quick intro call?`;
 }
 
-function SenderBadgeContent({ msg }: { msg: SdrMessageItem }) {
+function SenderLabel({
+	contactName,
+	msg,
+}: {
+	contactName?: string;
+	msg: SdrMessageItem;
+}) {
 	if (msg.direction === "inbound") {
-		return <span>Prospect Inbound</span>;
+		return (
+			<span className="text-foreground inline-flex items-center gap-1.5 font-semibold">
+				<User className="text-muted-foreground h-3.5 w-3.5" />
+				<span>{contactName ?? "Prospect"}</span>
+			</span>
+		);
 	}
 	if (msg.author === "ai") {
 		return (
-			<>
-				<Bot className="h-3 w-3" />
-				<span>Ledgerwise AI SDR</span>
-			</>
+			<span className="text-foreground inline-flex items-center gap-1.5 font-semibold">
+				<Bot className="text-primary h-3.5 w-3.5" />
+				<span>Ledgerwise AI</span>
+			</span>
 		);
 	}
 	return (
-		<>
-			<UserCheck className="h-3 w-3" />
-			<span>Human Representative</span>
-		</>
+		<span className="text-foreground inline-flex items-center gap-1.5 font-semibold">
+			<UserCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+			<span>Sales Rep (You)</span>
+		</span>
 	);
 }
 
-function MessageCard({ msg }: { msg: SdrMessageItem }) {
+function formatMessageFootnote(msg: SdrMessageItem): string | null {
+	if (msg.decisionSummary) {
+		return msg.decisionSummary;
+	}
 	const cls = msg.classification;
+	if (!cls) {
+		return null;
+	}
+	const parts = [
+		`Intent: ${cls.intent.replaceAll("_", " ")} (${Math.round(cls.confidence * 100)}%)`,
+	];
+	if (cls.mentionsPricing) {
+		parts.push("Pricing question (deferred to call)");
+	}
+	if (cls.asksIfBot) {
+		parts.push("Bot inquiry (disclosure verified)");
+	}
+	return parts.join(" · ");
+}
+
+function MessageCard({
+	contactName,
+	isFirst,
+	msg,
+}: {
+	contactName?: string;
+	isFirst: boolean;
+	msg: SdrMessageItem;
+}) {
+	const footnote = formatMessageFootnote(msg);
 	return (
 		<div
 			className={cn(
-				"rounded-xl border p-4 text-xs",
+				"space-y-2.5 rounded-xl border p-4 text-xs",
 				getMessageCardClasses(msg)
 			)}
 		>
-			<div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-				<div className="flex items-center gap-2">
-					<span
-						className={cn(
-							"inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase",
-							getSenderBadgeClasses(msg)
-						)}
-					>
-						<SenderBadgeContent msg={msg} />
-					</span>
-					<span className="text-foreground font-medium">{msg.subject}</span>
+			<div className="flex flex-wrap items-center justify-between gap-2">
+				<div className="flex min-w-0 items-center gap-2">
+					<SenderLabel contactName={contactName} msg={msg} />
+					{isFirst && msg.subject ? (
+						<>
+							<span className="text-muted-foreground">·</span>
+							<span className="text-muted-foreground truncate">
+								{msg.subject}
+							</span>
+						</>
+					) : null}
 				</div>
 
-				<div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px]">
-					<span>Status: {msg.status}</span>
-					<span>·</span>
-					<span>
-						{new Date(msg.createdAt).toLocaleString([], {
-							dateStyle: "short",
-							timeStyle: "short",
-						})}
-					</span>
-				</div>
+				<span className="text-muted-foreground shrink-0 font-mono text-[11px]">
+					{new Date(msg.createdAt).toLocaleString([], {
+						dateStyle: "short",
+						timeStyle: "short",
+					})}
+				</span>
 			</div>
 
 			<div className="text-foreground font-sans text-sm leading-relaxed whitespace-pre-wrap">
 				{msg.bodyText}
 			</div>
 
-			{msg.decisionSummary ? (
-				<div className="bg-muted/60 text-muted-foreground mt-2.5 rounded-md px-2.5 py-1.5 font-mono text-[11px]">
-					AI Decision: {msg.decisionSummary}
-				</div>
-			) : null}
-
-			{cls ? (
-				<div className="border-border/60 mt-3 flex flex-wrap items-center gap-2 border-t pt-2.5 font-mono text-[11px]">
-					<span className="bg-muted text-foreground rounded px-2 py-0.5">
-						intent: {cls.intent} ({Math.round(cls.confidence * 100)}%)
-					</span>
-					<span
-						className={cn(
-							"rounded px-2 py-0.5",
-							getConfidenceTierLabel(cls.confidence).className
-						)}
-					>
-						confidence: {getConfidenceTierLabel(cls.confidence).label}
-					</span>
-					{cls.detectedTimezone ? (
-						<span className="bg-muted text-muted-foreground rounded px-2 py-0.5">
-							tz: {cls.detectedTimezone}
-						</span>
-					) : null}
-					{cls.mentionsPricing ? (
-						<span className="rounded bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
-							mentions_pricing = true (deferred to call)
-						</span>
-					) : null}
-					{cls.asksIfBot ? (
-						<span className="rounded bg-sky-500/15 px-2 py-0.5 text-sky-700 dark:text-sky-300">
-							asks_if_bot = true (honest disclosure verified)
-						</span>
-					) : null}
-					<span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-						<ShieldCheck className="h-3.5 w-3.5" />
-						<span>Guards checked</span>
-					</span>
+			{footnote ? (
+				<div className="border-border/50 text-muted-foreground border-t pt-2 text-[11px]">
+					{footnote}
 				</div>
 			) : null}
 		</div>
@@ -259,18 +178,36 @@ function MessageCard({ msg }: { msg: SdrMessageItem }) {
 function ThreadListPane({
 	activeThreadId,
 	entries,
+	errorMessage,
+	isError,
 	isLoading,
+	onRetry,
 	onSelect,
 }: {
 	activeThreadId: string | null;
-	entries: ThreadListEntry[];
+	entries: SdrThreadListEntry[];
+	errorMessage?: string;
+	isError: boolean;
 	isLoading: boolean;
+	onRetry: () => void;
 	onSelect: (id: string) => void;
 }) {
 	if (isLoading) {
 		return (
 			<div className="border-border/70 bg-card text-muted-foreground rounded-xl border p-6 text-center text-sm">
 				Loading threads…
+			</div>
+		);
+	}
+	if (isError) {
+		return (
+			<div className="border-border/70 bg-card space-y-3 rounded-xl border p-6 text-center text-sm">
+				<p className="text-rose-600 dark:text-rose-400">
+					{errorMessage ?? "Failed to load conversation threads."}
+				</p>
+				<Button onClick={onRetry} size="sm" type="button" variant="outline">
+					Retry
+				</Button>
 			</div>
 		);
 	}
@@ -282,48 +219,42 @@ function ThreadListPane({
 		);
 	}
 	return (
-		<>
+		<div className="divide-border/70 border-border/70 bg-card divide-y overflow-y-auto rounded-xl border lg:max-h-full">
 			{entries.map((entry) => {
 				const isSelected = entry.thread.id === activeThreadId;
 				return (
 					<button
 						className={cn(
-							"w-full rounded-xl border p-3.5 text-left transition-all",
+							"w-full px-4 py-3.5 text-left transition-colors",
 							isSelected
-								? "border-primary bg-card ring-primary/25 shadow-xs ring-1"
-								: "border-border/70 bg-card/70 hover:bg-card"
+								? "border-l-primary bg-muted/50 border-l-2"
+								: "hover:bg-muted/25"
 						)}
 						key={entry.thread.id}
 						onClick={() => onSelect(entry.thread.id)}
 						type="button"
 					>
-						<div className="flex items-start justify-between gap-2">
-							<div className="text-foreground text-sm font-semibold">
+						<div className="flex items-center justify-between gap-2">
+							<span className="text-foreground truncate text-sm font-semibold">
 								{entry.company?.name ?? "Prospect"}
-							</div>
+							</span>
 							{entry.thread.pendingJobId ? (
-								<span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+								<span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
 									<Loader2 className="h-3 w-3 animate-spin" />
 									<span>AI working</span>
 								</span>
-							) : null}
+							) : (
+								<ThreadStateBadge status={entry.thread.status} />
+							)}
 						</div>
-						<div className="text-muted-foreground mt-0.5 text-xs">
-							{entry.contact?.fullName} · {entry.contact?.title}
-						</div>
-						<div className="text-foreground/80 mt-2 truncate font-mono text-xs">
+						<div className="text-muted-foreground mt-1 truncate text-xs">
+							{entry.contact?.fullName ?? "Founder"} ·{" "}
 							{entry.latestMessage?.subject ?? "Ledgerwise Intro"}
-						</div>
-						<div className="mt-2.5 flex items-center justify-between">
-							<ThreadStateBadge status={entry.thread.status} />
-							<span className="text-muted-foreground font-mono text-[10px]">
-								{entry.thread.prospectTimezone}
-							</span>
 						</div>
 					</button>
 				);
 			})}
-		</>
+		</div>
 	);
 }
 
@@ -373,271 +304,246 @@ function TakeoverControlButton({
 	);
 }
 
+function ThreadStatusBanners({
+	contactEmail,
+	isOptedOut,
+	isPollingJob,
+	meetings,
+	thread,
+}: {
+	contactEmail?: string | null;
+	isOptedOut: boolean;
+	isPollingJob: boolean;
+	meetings: SdrMeetingItem[];
+	thread: SdrThreadItem;
+}) {
+	return (
+		<>
+			{isPollingJob ? (
+				<div className="flex items-center gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-200">
+					<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 dark:text-amber-300" />
+					<span>AI is evaluating inbound reply and running safety guards…</span>
+				</div>
+			) : null}
+
+			{thread.status === "needs_human" ? (
+				<div className="flex items-start gap-2.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-900 dark:text-rose-200">
+					<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400" />
+					<div>
+						<span className="font-semibold">Escalated to you: </span>
+						<span>
+							{thread.handoffReason ??
+								"Question outside playbook or below 75% confidence."}
+						</span>
+					</div>
+				</div>
+			) : null}
+
+			{isOptedOut ? (
+				<div className="border-border bg-muted/60 text-muted-foreground flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-xs">
+					<Lock className="text-foreground h-3.5 w-3.5 shrink-0" />
+					<span>
+						<strong className="text-foreground">Opted out:</strong>{" "}
+						{contactEmail} is suppressed; outbound emails are blocked.
+					</span>
+				</div>
+			) : null}
+
+			{meetings.length > 0 ? (
+				<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+					<div className="flex items-center gap-2">
+						<CalendarCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+						<span>
+							<strong className="font-semibold">Call Booked:</strong>{" "}
+							{new Date(meetings[0]?.startAt ?? "").toLocaleString([], {
+								dateStyle: "medium",
+								timeStyle: "short",
+							})}{" "}
+							({meetings[0]?.timezone})
+						</span>
+					</div>
+					<Link className="font-medium underline" href="/dashboard/meetings">
+						View call →
+					</Link>
+				</div>
+			) : null}
+		</>
+	);
+}
+
 function InboxThreadInspector({
 	company,
 	contact,
 	meetings,
 	messages,
-	showSimulator,
 	thread,
 }: {
 	company: SdrCompanySummary | null;
 	contact: SdrCompanySummary["primaryContact"];
 	meetings: SdrMeetingItem[];
 	messages: SdrMessageItem[];
-	showSimulator: boolean;
 	thread: SdrThreadItem;
 }) {
 	const {
 		takeoverThread,
 		releaseThread,
 		sendHumanReply,
-		simulateInboundReply,
 		isTakingOver,
 		isReleasing,
 		isSendingHumanReply,
-		isSimulatingInbound,
 	} = useSdrThreadMutations();
 
 	const [humanReplyText, setHumanReplyText] = useState("");
-	const [simulatorText, setSimulatorText] = useState<string>(
-		SIMULATOR_PRESETS[0].bodyText
-	);
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const scrollBottomRef = useRef<HTMLDivElement>(null);
+	const prevThreadIdRef = useRef<string | null>(null);
+	const prevMessageCountRef = useRef(0);
+	const prevLastMessageIdRef = useRef<string | null>(null);
 
 	const isOptedOut = thread.status === "opted_out";
 	const isPollingJob = Boolean(thread.pendingJobId);
+	const lastMessageId = messages.at(-1)?.id ?? null;
+
+	useEffect(() => {
+		const isNewThread = prevThreadIdRef.current !== thread.id;
+		const hasNewMessage =
+			!isNewThread &&
+			(messages.length > prevMessageCountRef.current ||
+				lastMessageId !== prevLastMessageIdRef.current);
+
+		prevThreadIdRef.current = thread.id;
+		prevMessageCountRef.current = messages.length;
+		prevLastMessageIdRef.current = lastMessageId;
+
+		if (!(isNewThread || hasNewMessage)) {
+			return;
+		}
+
+		const prefersReduced =
+			typeof window !== "undefined" &&
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const behavior: ScrollBehavior =
+			isNewThread || prefersReduced ? "auto" : "smooth";
+
+		const container = scrollContainerRef.current;
+		if (container && container.scrollHeight > container.clientHeight) {
+			container.scrollTo({
+				behavior,
+				top: container.scrollHeight,
+			});
+			return;
+		}
+
+		if (hasNewMessage) {
+			scrollBottomRef.current?.scrollIntoView({
+				behavior,
+				block: "end",
+			});
+		}
+	}, [thread.id, messages.length, lastMessageId]);
 
 	const handleSendHumanReply = async (event: React.FormEvent) => {
 		event.preventDefault();
 		if (!humanReplyText.trim()) {
 			return;
 		}
-		await sendHumanReply({
-			bodyText: humanReplyText.trim(),
-			threadId: thread.id,
-		});
-		setHumanReplyText("");
-	};
-
-	const handleSimulateReply = async (event: React.FormEvent) => {
-		event.preventDefault();
-		if (!simulatorText.trim()) {
-			return;
+		try {
+			await sendHumanReply({
+				bodyText: humanReplyText.trim(),
+				threadId: thread.id,
+			});
+			setHumanReplyText("");
+		} catch {
+			// Surfaced to user via mutation onError toast
 		}
-		await simulateInboundReply({
-			bodyText: simulatorText.trim(),
-			preset: "custom",
-			threadId: thread.id,
-		});
 	};
 
 	return (
-		<div className="border-border/70 bg-card space-y-4 rounded-xl border p-5">
+		<div className="border-border/70 bg-card flex flex-col overflow-hidden rounded-xl border lg:h-full lg:min-h-0">
 			{/* Thread Top Bar */}
-			<div className="border-border/70 flex flex-col justify-between gap-3 border-b pb-4 sm:flex-row sm:items-start">
-				<div className="space-y-1">
+			<div className="border-border/70 flex shrink-0 flex-col justify-between gap-3 border-b px-5 py-3.5 sm:flex-row sm:items-center">
+				<div className="min-w-0 space-y-0.5">
 					<div className="flex flex-wrap items-center gap-2">
-						<h2 className="text-foreground text-lg font-bold">
-							{company?.name ?? "Prospect"}
-						</h2>
-						<ThreadStateBadge status={thread.status} />
+						{company ? (
+							<Link
+								className="text-foreground hover:text-primary text-base font-semibold transition-colors hover:underline"
+								href={`/dashboard/companies?companyId=${company.id}`}
+							>
+								{company.name}
+							</Link>
+						) : (
+							<h2 className="text-foreground text-base font-semibold">
+								Prospect
+							</h2>
+						)}
 						{company ? (
 							<TierBadge score={company.score} tier={company.tier} />
 						) : null}
 					</div>
-					<div className="text-muted-foreground text-xs">
-						Contact:{" "}
+					<div className="text-muted-foreground truncate text-xs">
 						<span className="text-foreground font-medium">
-							{contact?.fullName} ({contact?.title})
-						</span>{" "}
-						·{" "}
-						<span className="font-mono">
-							{contact?.email} · TZ: {thread.prospectTimezone}
+							{contact?.fullName}
 						</span>
+						{contact?.title ? ` (${contact.title})` : null} ·{" "}
+						<span className="font-mono">{contact?.email}</span>
 					</div>
 				</div>
 
-				<div className="flex shrink-0 flex-wrap items-center gap-2">
+				<div className="flex shrink-0 items-center gap-2">
 					<TakeoverControlButton
 						aiMode={thread.aiMode}
 						isOptedOut={isOptedOut}
 						isReleasing={isReleasing}
 						isTakingOver={isTakingOver}
-						onRelease={() => void releaseThread(thread.id)}
-						onTakeover={() => void takeoverThread(thread.id)}
+						onRelease={() =>
+							void releaseThread(thread.id).catch(() => undefined)
+						}
+						onTakeover={() =>
+							void takeoverThread(thread.id).catch(() => undefined)
+						}
 					/>
-
-					{company ? (
-						<Button asChild size="sm" variant="ghost">
-							<Link href={`/dashboard/companies?companyId=${company.id}`}>
-								Brief →
-							</Link>
-						</Button>
-					) : null}
 				</div>
 			</div>
 
-			{/* Live BullMQ Polling Status Banner */}
-			{isPollingJob ? (
-				<div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
-					<div className="flex items-center gap-2.5">
-						<Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-300" />
-						<div>
-							<span className="font-semibold">
-								AI SDR is evaluating inbound reply in BullMQ (
-								<code className="font-mono">{thread.pendingJobId}</code>)…
-							</span>
-							<p className="text-[11px] opacity-90">
-								Polling live every 1.5s — running opt-out check,
-								intent/confidence classifier, playbook RAG, and zero pricing
-								guard.
-							</p>
-						</div>
-					</div>
-				</div>
-			) : null}
-
-			{/* Escalation Banner when Needs Human */}
-			{thread.status === "needs_human" ? (
-				<div className="flex flex-col justify-between gap-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs text-rose-900 sm:flex-row sm:items-center dark:text-rose-200">
-					<div className="space-y-0.5">
-						<div className="flex items-center gap-1.5 font-semibold">
-							<AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-							<span>AI Paused & Escalated to Human Representative</span>
-						</div>
-						<p>
-							{thread.handoffReason ??
-								"Prospect asked a question outside the approved playbook or below the 0.75 confidence threshold."}
-						</p>
-					</div>
-					<span className="shrink-0 rounded bg-rose-500/20 px-2 py-1 font-mono text-[11px] font-semibold">
-						ai_mode = paused
-					</span>
-				</div>
-			) : null}
-
-			{/* Hard Opt-Out Suppression Lock Banner */}
-			{isOptedOut ? (
-				<div className="border-border bg-muted/70 text-muted-foreground flex items-center gap-2.5 rounded-lg border p-3.5 text-xs">
-					<Lock className="text-foreground h-4 w-4 shrink-0" />
-					<div>
-						<strong className="text-foreground">
-							Hard Opt-Out & Suppression Gate Active:
-						</strong>{" "}
-						{contact?.email} is recorded in{" "}
-						<code className="font-mono">suppressions</code>. All AI and human
-						outbound emails to this address are permanently blocked.
-					</div>
-				</div>
-			) : null}
-
-			{/* Booked Meeting Callout */}
-			{meetings.length > 0 ? (
-				<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-900 dark:text-emerald-200">
-					<div className="flex items-center gap-2">
-						<CalendarCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-						<div>
-							<span className="font-semibold">Discovery Call Booked: </span>
-							<span>
-								{new Date(meetings[0]?.startAt ?? "").toLocaleString([], {
-									dateStyle: "medium",
-									timeStyle: "short",
-								})}{" "}
-								({meetings[0]?.timezone})
-							</span>
-						</div>
-					</div>
-					<Link className="font-semibold underline" href="/dashboard/meetings">
-						View in Meetings →
-					</Link>
-				</div>
-			) : null}
-
-			{/* Prospect Reply Simulator Panel */}
-			{showSimulator ? (
-				<form
-					className="border-primary/35 bg-primary/5 space-y-3 rounded-xl border p-4"
-					onSubmit={handleSimulateReply}
-				>
-					<div className="flex flex-wrap items-center justify-between gap-2">
-						<div className="text-foreground flex items-center gap-1.5 text-xs font-semibold">
-							<FlaskConical className="text-primary h-4 w-4" />
-							<span>
-								Sandbox Prospect Reply Simulator (Injects Inbound Reply as{" "}
-								{contact?.fullName ?? "Prospect"})
-							</span>
-						</div>
-						<span className="text-muted-foreground font-mono text-[11px]">
-							POST /api/sdr/threads/:id/simulate-inbound
-						</span>
-					</div>
-
-					<div className="flex flex-wrap gap-1.5">
-						{SIMULATOR_PRESETS.map((preset) => (
-							<button
-								className={cn(
-									"rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors",
-									simulatorText === preset.bodyText
-										? "border-primary bg-primary text-primary-foreground"
-										: "border-border bg-card text-foreground hover:bg-muted"
-								)}
-								key={preset.label}
-								onClick={() => setSimulatorText(preset.bodyText)}
-								title={preset.description}
-								type="button"
-							>
-								{preset.label}
-							</button>
-						))}
-					</div>
-
-					<textarea
-						className="border-border bg-background text-foreground focus:border-primary w-full rounded-lg border p-2.5 text-xs focus:outline-none"
-						onChange={(e) => setSimulatorText(e.target.value)}
-						placeholder="Type a simulated reply from the prospect…"
-						rows={3}
-						value={simulatorText}
+			{/* Pinned Status Banners */}
+			{isPollingJob ||
+			thread.status === "needs_human" ||
+			isOptedOut ||
+			meetings.length > 0 ? (
+				<div className="border-border/50 shrink-0 space-y-2 border-b px-5 py-3">
+					<ThreadStatusBanners
+						contactEmail={contact?.email}
+						isOptedOut={isOptedOut}
+						isPollingJob={isPollingJob}
+						meetings={meetings}
+						thread={thread}
 					/>
-
-					<div className="flex items-center justify-between gap-2">
-						<span className="text-muted-foreground text-[11px]">
-							Triggers inbound classifier, guard checks, and live 1.5s UI
-							polling.
-						</span>
-						<Button
-							disabled={isSimulatingInbound || !simulatorText.trim()}
-							size="sm"
-							type="submit"
-							variant="primary"
-						>
-							<Sparkles className="h-3.5 w-3.5" />
-							<span>
-								{isSimulatingInbound
-									? "Injecting Reply…"
-									: "Simulate Prospect Reply"}
-							</span>
-						</Button>
-					</div>
-				</form>
+				</div>
 			) : null}
 
-			{/* Conversation Message Timeline */}
-			<div className="space-y-3 pt-1">
-				<div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-					Conversation Timeline ({messages.length} messages)
-				</div>
-
+			{/* Scrollable Chat Area */}
+			<div
+				className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4"
+				ref={scrollContainerRef}
+			>
+				{/* Conversation Message Timeline */}
 				<div className="space-y-3">
-					{messages.map((msg) => (
-						<MessageCard key={msg.id} msg={msg} />
+					{messages.map((msg, index) => (
+						<MessageCard
+							contactName={contact?.fullName}
+							isFirst={index === 0}
+							key={msg.id}
+							msg={msg}
+						/>
 					))}
 				</div>
+				<div ref={scrollBottomRef} />
 			</div>
 
 			{/* Human Reply Composer */}
 			{isOptedOut ? null : (
 				<form
-					className="border-border/70 space-y-2.5 border-t pt-4"
+					className="border-border/70 bg-card shrink-0 space-y-2 border-t px-5 py-3.5"
 					onSubmit={handleSendHumanReply}
 				>
 					<div className="flex items-center justify-between">
@@ -645,23 +551,8 @@ function InboxThreadInspector({
 							className="text-foreground text-xs font-semibold"
 							htmlFor="human-reply-textarea"
 						>
-							Send Reply as Human Sales Representative (Zero-Pricing Guard
-							Enforced)
+							Reply to {contact?.fullName ?? "Prospect"}
 						</label>
-						<span className="text-muted-foreground text-[11px]">
-							Sending switches thread to{" "}
-							<code className="font-mono">You&apos;re handling</code>
-						</span>
-					</div>
-					<textarea
-						className="border-border bg-background text-foreground focus:border-primary w-full rounded-lg border p-3 text-sm focus:outline-none"
-						id="human-reply-textarea"
-						onChange={(e) => setHumanReplyText(e.target.value)}
-						placeholder={`Write a direct reply to ${contact?.fullName ?? "the prospect"} (remember: never quote pricing in email, book a discovery call)…`}
-						rows={3}
-						value={humanReplyText}
-					/>
-					<div className="flex items-center justify-between gap-2">
 						<Button
 							onClick={() =>
 								setHumanReplyText(
@@ -674,11 +565,21 @@ function InboxThreadInspector({
 							}
 							size="sm"
 							type="button"
-							variant="outline"
+							variant="ghost"
 						>
 							<Sparkles className="h-3.5 w-3.5" />
-							<span>Suggest Safe Draft</span>
+							<span>Suggest Draft</span>
 						</Button>
+					</div>
+					<textarea
+						className="border-border bg-background text-foreground focus:border-primary w-full rounded-lg border p-2.5 text-sm focus:outline-none"
+						id="human-reply-textarea"
+						onChange={(e) => setHumanReplyText(e.target.value)}
+						placeholder={`Write a reply to ${contact?.fullName ?? "the prospect"} (pricing is shared on the call)…`}
+						rows={2}
+						value={humanReplyText}
+					/>
+					<div className="flex justify-end">
 						<Button
 							disabled={isSendingHumanReply || !humanReplyText.trim()}
 							size="sm"
@@ -686,9 +587,7 @@ function InboxThreadInspector({
 							variant="primary"
 						>
 							<Send className="h-3.5 w-3.5" />
-							<span>
-								{isSendingHumanReply ? "Sending Reply…" : "Send Human Reply"}
-							</span>
+							<span>{isSendingHumanReply ? "Sending…" : "Send Reply"}</span>
 						</Button>
 					</div>
 				</form>
@@ -708,12 +607,17 @@ function InboxPageContent() {
 	const [selectedThreadId, setSelectedThreadId] = useState<string | null>(
 		initialThreadId
 	);
-	const [showSimulator, setShowSimulator] = useState(true);
+	const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
 
-	const { data: rawThreads = [], isLoading } = useSdrThreads(
-		statusFilter === "all" ? undefined : statusFilter
-	);
-	const entries = rawThreads as unknown as ThreadListEntry[];
+	const { simulateInboundReply, isSimulatingInbound } = useSdrThreadMutations();
+
+	const {
+		data: entries = [],
+		error: threadsError,
+		isError: isThreadsError,
+		isLoading,
+		refetch: refetchThreads,
+	} = useSdrThreads(statusFilter === "all" ? undefined : statusFilter);
 
 	const activeThreadId = useMemo(() => {
 		if (
@@ -728,80 +632,86 @@ function InboxPageContent() {
 	const { data: detail } = useSdrThreadDetail(activeThreadId);
 
 	return (
-		<div className="mx-auto max-w-6xl space-y-5 p-6 sm:p-8">
-			{/* Page Header */}
-			<div className="border-border/70 flex flex-col justify-between gap-4 border-b pb-4 sm:flex-row sm:items-center">
-				<div>
-					<h1 className="text-foreground text-2xl font-bold tracking-tight">
-						Prospect Conversation Inbox & Reply Simulator
-					</h1>
-					<p className="text-muted-foreground mt-1 text-sm">
-						Monitor autonomous AI SDR replies, step into escalated threads, or
-						simulate inbound prospect replies with live 1.5s queue polling.
-					</p>
+		<div className="mx-auto max-w-6xl space-y-4 p-5 sm:p-6 lg:flex lg:h-[calc(100dvh-6.75rem)] lg:flex-col lg:space-y-4 lg:overflow-hidden">
+			{/* Page Header & Filters */}
+			<div className="shrink-0 space-y-3">
+				<div className="border-border/70 flex flex-col justify-between gap-3 border-b pb-3.5 sm:flex-row sm:items-center">
+					<div className="min-w-0 flex-1 space-y-0.5">
+						<h1 className="text-foreground text-2xl font-bold tracking-tight">
+							Conversation Inbox
+						</h1>
+						<p className="text-muted-foreground max-w-2xl text-sm">
+							Monitor autonomous AI replies, step into escalated threads, or
+							simulate inbound prospect messages.
+						</p>
+					</div>
+
+					<Button
+						className="shrink-0"
+						disabled={!detail}
+						onClick={() => setIsSimulatorOpen(true)}
+						size="sm"
+						type="button"
+						variant="outline"
+					>
+						<FlaskConical className="h-3.5 w-3.5" />
+						<span>Simulate Reply</span>
+					</Button>
 				</div>
 
-				<Button
-					onClick={() => setShowSimulator((prev) => !prev)}
-					size="sm"
-					variant={showSimulator ? "primary" : "outline"}
-				>
-					<FlaskConical className="h-3.5 w-3.5" />
-					<span>
-						{showSimulator
-							? "Hide Prospect Simulator"
-							: "Open Prospect Reply Simulator"}
-					</span>
-				</Button>
-			</div>
-
-			{/* State Filter Pills */}
-			<div className="flex flex-wrap items-center gap-1.5">
-				{(
-					[
-						{ key: "all", label: "All Conversations" },
-						{ key: "needs_human", label: "Needs You" },
-						{ key: "active", label: "AI Handling" },
-						{ key: "human", label: "You're Handling" },
-						{ key: "booked", label: "Call Booked" },
-						{ key: "opted_out", label: "Opted Out" },
-					] as const
-				).map((tab) => (
-					<button
-						className={cn(
-							"rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-							statusFilter === tab.key
-								? "border-primary bg-primary/10 text-foreground font-semibold"
-								: "border-border/70 bg-card text-muted-foreground hover:text-foreground"
-						)}
-						key={tab.key}
-						onClick={() => setStatusFilter(tab.key)}
-						type="button"
-					>
-						{tab.label}
-					</button>
-				))}
+				{/* State Filter Pills */}
+				<div className="flex flex-wrap items-center gap-1.5">
+					{(
+						[
+							{ key: "all", label: "All" },
+							{ key: "needs_human", label: "Needs You" },
+							{ key: "active", label: "AI Handling" },
+							{ key: "human", label: "You're Handling" },
+							{ key: "booked", label: "Call Booked" },
+							{ key: "opted_out", label: "Opted Out" },
+						] as const
+					).map((tab) => (
+						<button
+							className={cn(
+								"rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+								statusFilter === tab.key
+									? "border-primary bg-primary/10 text-foreground font-semibold"
+									: "border-border/70 bg-card text-muted-foreground hover:text-foreground"
+							)}
+							key={tab.key}
+							onClick={() => setStatusFilter(tab.key)}
+							type="button"
+						>
+							{tab.label}
+						</button>
+					))}
+				</div>
 			</div>
 
 			{/* Main Split View */}
-			<div className="grid gap-6 lg:grid-cols-12">
-				<div className="space-y-2.5 lg:col-span-4">
+			<div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-12">
+				<div className="min-w-0 lg:col-span-4 lg:min-h-0">
 					<ThreadListPane
 						activeThreadId={activeThreadId}
 						entries={entries}
+						errorMessage={
+							threadsError instanceof Error ? threadsError.message : undefined
+						}
+						isError={isThreadsError}
 						isLoading={isLoading}
+						onRetry={() => void refetchThreads()}
 						onSelect={setSelectedThreadId}
 					/>
 				</div>
 
-				<div className="space-y-4 lg:col-span-8">
+				<div className="min-w-0 lg:col-span-8 lg:min-h-0">
 					{detail ? (
 						<InboxThreadInspector
 							company={detail.company as SdrCompanySummary | null}
 							contact={detail.contact as SdrCompanySummary["primaryContact"]}
+							key={detail.thread.id}
 							meetings={detail.meetings as SdrMeetingItem[]}
 							messages={detail.messages as SdrMessageItem[]}
-							showSimulator={showSimulator}
 							thread={detail.thread as SdrThreadItem}
 						/>
 					) : (
@@ -811,6 +721,24 @@ function InboxPageContent() {
 					)}
 				</div>
 			</div>
+
+			<SimulateReplyDialog
+				companyName={detail?.company?.name}
+				contactEmail={detail?.contact?.email}
+				contactName={detail?.contact?.fullName}
+				isSubmitting={isSimulatingInbound}
+				onOpenChange={setIsSimulatorOpen}
+				onSubmit={async (bodyText) => {
+					if (!detail) {
+						return;
+					}
+					await simulateInboundReply({
+						bodyText,
+						threadId: detail.thread.id,
+					});
+				}}
+				open={isSimulatorOpen && Boolean(detail)}
+			/>
 		</div>
 	);
 }

@@ -25,11 +25,11 @@ export function SettingsPage({
 	const HeadingTag = headingLevel;
 
 	return (
-		<div className={cn("flex w-full min-w-full flex-col gap-6", className)}>
+		<div className={cn("flex w-full min-w-0 flex-col gap-6", className)}>
 			{/* Hero Settings Banner with Ambient Glow */}
-			<div className="border-border/70 bg-card/70 relative overflow-hidden rounded-2xl border p-6 shadow-xs backdrop-blur-md sm:p-8">
-				<div className="from-primary/10 via-primary/5 dark:from-primary/15 pointer-events-none absolute inset-0 bg-linear-to-r to-transparent" />
-				<div className="bg-primary/10 pointer-events-none absolute -top-12 -right-12 h-44 w-44 rounded-full blur-3xl" />
+			<div className="border-border/70 relative overflow-hidden rounded-2xl border p-5 backdrop-blur-md sm:p-8">
+				<div className="from-primary/10 via-primary/5 dark:from-primary/15 pointer-events-none absolute inset-0" />
+				<div className="pointer-events-none absolute -top-12 -right-12 h-44 w-44 rounded-full blur-3xl" />
 				<div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 					<div className="min-w-0 space-y-1.5">
 						<div className="flex flex-wrap items-center gap-2.5">
@@ -43,7 +43,9 @@ export function SettingsPage({
 						</p>
 					</div>
 					{action ? (
-						<div className="flex shrink-0 items-center gap-2.5">{action}</div>
+						<div className="flex flex-wrap items-center gap-2.5 sm:shrink-0">
+							{action}
+						</div>
 					) : null}
 				</div>
 			</div>
@@ -93,11 +95,11 @@ export function SettingsSectionHeader({
 	return (
 		<div
 			className={cn(
-				"border-border/60 bg-muted/20 flex flex-col gap-3 border-b px-6 py-4.5 sm:flex-row sm:items-center sm:justify-between",
+				"border-border/60 bg-muted/20 flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4.5",
 				className
 			)}
 		>
-			<div className="space-y-1">
+			<div className="min-w-0 space-y-1">
 				{title ? (
 					<h2 className="text-foreground text-base font-semibold tracking-tight">
 						{title}
@@ -109,7 +111,9 @@ export function SettingsSectionHeader({
 					</p>
 				) : null}
 			</div>
-			{action ? <div className="flex items-center gap-2">{action}</div> : null}
+			{action ? (
+				<div className="flex flex-wrap items-center gap-2">{action}</div>
+			) : null}
 		</div>
 	);
 }
@@ -123,5 +127,5 @@ export function SettingsSectionContent({
 	children,
 	className,
 }: SettingsSectionContentProps) {
-	return <div className={cn("p-6 sm:p-7", className)}>{children}</div>;
+	return <div className={cn("p-4 sm:p-7", className)}>{children}</div>;
 }

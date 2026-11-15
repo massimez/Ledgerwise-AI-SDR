@@ -46,6 +46,8 @@ function buildContentSecurityPolicy(prodEnv: boolean): string {
 		imageSources.add("http://127.0.0.1:9000");
 	}
 
+	// Static route headers cannot inject per-request CSP nonces without dynamic rendering;
+	// keep 'unsafe-inline' for Next.js RSC/hydration scripts while stripping 'unsafe-eval' in prod.
 	const scriptDirectives = prodEnv
 		? "'self' 'unsafe-inline'"
 		: "'self' 'unsafe-inline' 'unsafe-eval'";

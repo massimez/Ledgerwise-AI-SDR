@@ -19,13 +19,11 @@
     "start": "next start"
   },
   "dependencies": {
-    "@ai-sdk/react": "catalog:",
     "@next/bundle-analyzer": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@workspace/ai-core": "workspace:*",
     "@workspace/api": "workspace:*",
     "@workspace/ui": "workspace:*",
-    "ai": "catalog:",
     "better-auth": "catalog:",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",

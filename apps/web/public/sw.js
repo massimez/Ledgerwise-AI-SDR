@@ -32,7 +32,8 @@ self.addEventListener("notificationclick", (event) => {
 	const safePath =
 		typeof rawUrl === "string" &&
 		rawUrl.startsWith("/") &&
-		!rawUrl.startsWith("//")
+		!rawUrl.startsWith("//") &&
+		!rawUrl.includes("\\")
 			? rawUrl
 			: "/dashboard";
 

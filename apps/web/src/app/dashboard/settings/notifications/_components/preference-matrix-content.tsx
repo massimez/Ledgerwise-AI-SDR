@@ -72,6 +72,42 @@ function getPreferenceEnabled(
 	return match?.enabled ?? false;
 }
 
+function PreferenceToggleSwitch({
+	channel,
+	enabled,
+	isPending,
+	metaLabel,
+	onToggle,
+}: {
+	channel: NotificationChannel;
+	enabled: boolean;
+	isPending: boolean;
+	metaLabel: string;
+	onToggle: () => void;
+}) {
+	return (
+		<button
+			aria-checked={enabled}
+			aria-label={`${metaLabel} via ${CHANNEL_METADATA[channel].label}`}
+			className={cn(
+				"focus-visible:ring-ring inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+				enabled ? "bg-primary" : "bg-muted-foreground/30"
+			)}
+			disabled={isPending}
+			onClick={onToggle}
+			role="switch"
+			type="button"
+		>
+			<span
+				className={cn(
+					"bg-background pointer-events-none block h-5 w-5 rounded-full shadow-xs ring-0 transition-transform",
+					enabled ? "translate-x-5" : "translate-x-0"
+				)}
+			/>
+		</button>
+	);
+}
+
 export function PreferenceMatrixContent({
 	error,
 	isError,
@@ -113,80 +149,120 @@ export function PreferenceMatrixContent({
 	}
 
 	return (
-		<div className="border-border/60 overflow-x-auto rounded-2xl border">
-			<table className="w-full text-left text-sm">
-				<thead>
-					<tr className="border-border/60 bg-muted/20 border-b">
-						<th className="px-6 py-3.5 text-xs font-semibold">
-							Notification Category
-						</th>
-						{NOTIFICATION_CHANNELS.map((channel) => {
-							const Icon = CHANNEL_METADATA[channel].icon;
-							return (
-								<th
-									className="px-4 py-3.5 text-center text-xs font-semibold"
-									key={channel}
-								>
-									<span className="inline-flex items-center gap-1.5">
-										<Icon className="text-muted-foreground h-3.5 w-3.5" />
-										{CHANNEL_METADATA[channel].label}
-									</span>
-								</th>
-							);
-						})}
-					</tr>
-				</thead>
-				<tbody className="divide-border/50 divide-y">
-					{NOTIFICATION_CATEGORIES.map((category) => {
-						const meta = CATEGORY_METADATA[category];
-						return (
-							<tr
-								className="hover:bg-muted/10 transition-colors"
-								key={category}
-							>
-								<td className="px-6 py-4">
-									<p className="text-foreground font-medium">{meta.label}</p>
-									<p className="text-muted-foreground text-xs">
-										{meta.description}
-									</p>
-								</td>
+		<>
+			{/* Mobile Stacked Cards */}
+			<div className="divide-border/50 border-border/60 divide-y rounded-2xl border sm:hidden">
+				{NOTIFICATION_CATEGORIES.map((category) => {
+					const meta = CATEGORY_METADATA[category];
+					return (
+						<div className="space-y-3 p-4" key={category}>
+							<div className="space-y-0.5">
+								<p className="text-foreground text-sm font-medium">
+									{meta.label}
+								</p>
+								<p className="text-muted-foreground text-xs">
+									{meta.description}
+								</p>
+							</div>
+							<div className="grid grid-cols-3 gap-2">
 								{NOTIFICATION_CHANNELS.map((channel) => {
+									const Icon = CHANNEL_METADATA[channel].icon;
 									const enabled = getPreferenceEnabled(
 										preferences,
 										category,
 										channel
 									);
 									const cellKey = `${category}:${channel}`;
-									const isCellPending = pendingKey === cellKey;
 									return (
-										<td className="px-4 py-4 text-center" key={channel}>
-											<button
-												aria-checked={enabled}
-												aria-label={`${meta.label} via ${CHANNEL_METADATA[channel].label}`}
-												className={cn(
-													"focus-visible:ring-ring inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
-													enabled ? "bg-primary" : "bg-muted-foreground/30"
-												)}
-												disabled={isCellPending}
-												onClick={() => onToggle(category, channel, !enabled)}
-												role="switch"
-												type="button"
-											>
-												<span
-													className={cn(
-														"bg-background pointer-events-none block h-5 w-5 rounded-full shadow-xs ring-0 transition-transform",
-														enabled ? "translate-x-5" : "translate-x-0"
-													)}
-												/>
-											</button>
-										</td>
+										<div
+											className="border-border/60 bg-muted/20 flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5"
+											key={channel}
+										>
+											<span className="text-muted-foreground inline-flex items-center gap-1 text-[11px] font-medium">
+												<Icon className="h-3 w-3 shrink-0" />
+												<span className="truncate">
+													{CHANNEL_METADATA[channel].label}
+												</span>
+											</span>
+											<PreferenceToggleSwitch
+												channel={channel}
+												enabled={enabled}
+												isPending={pendingKey === cellKey}
+												metaLabel={meta.label}
+												onToggle={() => onToggle(category, channel, !enabled)}
+											/>
+										</div>
 									);
 								})}
-							</tr>
-						);
-					})}
-				</tbody>
-			</table>
-		</div>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+
+			{/* Desktop Table */}
+			<div className="border-border/60 hidden overflow-x-auto rounded-2xl border sm:block">
+				<table className="w-full text-left text-sm">
+					<thead>
+						<tr className="border-border/60 bg-muted/20 border-b">
+							<th className="px-6 py-3.5 text-xs font-semibold">
+								Notification Category
+							</th>
+							{NOTIFICATION_CHANNELS.map((channel) => {
+								const Icon = CHANNEL_METADATA[channel].icon;
+								return (
+									<th
+										className="px-4 py-3.5 text-center text-xs font-semibold"
+										key={channel}
+									>
+										<span className="inline-flex items-center gap-1.5">
+											<Icon className="text-muted-foreground h-3.5 w-3.5" />
+											{CHANNEL_METADATA[channel].label}
+										</span>
+									</th>
+								);
+							})}
+						</tr>
+					</thead>
+					<tbody className="divide-border/50 divide-y">
+						{NOTIFICATION_CATEGORIES.map((category) => {
+							const meta = CATEGORY_METADATA[category];
+							return (
+								<tr
+									className="hover:bg-muted/10 transition-colors"
+									key={category}
+								>
+									<td className="px-6 py-4">
+										<p className="text-foreground font-medium">{meta.label}</p>
+										<p className="text-muted-foreground text-xs">
+											{meta.description}
+										</p>
+									</td>
+									{NOTIFICATION_CHANNELS.map((channel) => {
+										const enabled = getPreferenceEnabled(
+											preferences,
+											category,
+											channel
+										);
+										const cellKey = `${category}:${channel}`;
+										return (
+											<td className="px-4 py-4 text-center" key={channel}>
+												<PreferenceToggleSwitch
+													channel={channel}
+													enabled={enabled}
+													isPending={pendingKey === cellKey}
+													metaLabel={meta.label}
+													onToggle={() => onToggle(category, channel, !enabled)}
+												/>
+											</td>
+										);
+									})}
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+		</>
 	);
 }

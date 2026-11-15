@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@workspace/ui/lib/utils";
-import type { CompanyTier, ThreadStatus } from "@/lib/sdr-fallback-data";
+import type { CompanyTier, ThreadStatus } from "@/lib/sdr-types";
 
 export function TierBadge({
 	score,
@@ -13,7 +13,7 @@ export function TierBadge({
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs font-semibold tabular-nums",
+				"inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs font-semibold whitespace-nowrap tabular-nums",
 				tier === "A" &&
 					"border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
 				tier === "B" &&
@@ -48,12 +48,18 @@ const THREAD_STATUS_LABELS: Record<
 	opted_out: { label: "Opted out (Suppressed)", tone: "neutral" },
 };
 
-export function ThreadStateBadge({ status }: { status: ThreadStatus }) {
+export function ThreadStateBadge({
+	status,
+	isCompact,
+}: {
+	status: ThreadStatus;
+	isCompact?: boolean;
+}) {
 	const meta = THREAD_STATUS_LABELS[status];
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+				"inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
 				meta.tone === "amber" &&
 					"border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
 				meta.tone === "emerald" &&
@@ -79,7 +85,7 @@ export function ThreadStateBadge({ status }: { status: ThreadStatus }) {
 					meta.tone === "neutral" && "bg-muted-foreground"
 				)}
 			/>
-			<span>{meta.label}</span>
+			<span>{isCompact ? "" : meta.label}</span>
 		</span>
 	);
 }

@@ -106,10 +106,25 @@ export function sanitizeInternalRedirect(rawUrl: unknown): string | undefined {
 	if (typeof rawUrl !== "string") {
 		return undefined;
 	}
-	if (rawUrl.startsWith("/") && !rawUrl.startsWith("//")) {
-		return rawUrl;
+	if (
+		!rawUrl.startsWith("/") ||
+		rawUrl.startsWith("//") ||
+		rawUrl.includes("\\") ||
+		rawUrl.includes("\r") ||
+		rawUrl.includes("\n") ||
+		rawUrl.includes("\t")
+	) {
+		return undefined;
 	}
-	return undefined;
+	try {
+		const parsed = new URL(rawUrl, "https://internal.local");
+		if (parsed.origin !== "https://internal.local") {
+			return undefined;
+		}
+		return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+	} catch {
+		return undefined;
+	}
 }
 
 /**

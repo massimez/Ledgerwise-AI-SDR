@@ -7,6 +7,7 @@ import {
 	getServerSession,
 } from "@/lib/auth-server";
 import { DashboardHeader } from "./_components/dashboard-header";
+import { DashboardNav } from "./_components/dashboard-nav";
 import { DashboardWorkspaceGuard } from "./_components/dashboard-workspace-guard";
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default async function DashboardLayout({
 	return (
 		<div className="bg-muted/20 text-foreground min-h-screen">
 			<DashboardHeader />
+			<DashboardNav />
 			<DashboardWorkspaceGuard
 				preferredOrganizationId={preferredOrganizationId}
 			>

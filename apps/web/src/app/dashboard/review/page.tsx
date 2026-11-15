@@ -1,5 +1,11 @@
 "use client";
 
+import {
+	countEmailWords,
+	detectOutboundPriceViolation,
+	hasUrlLink,
+	sanitizeExternalHttpUrl,
+} from "@workspace/ai-core/contracts";
 import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -13,53 +19,13 @@ import {
 	X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import type {
-	SdrCompanySummary,
-	SdrEvidenceItem,
-	SdrMessageItem,
-	SdrThreadItem,
-} from "@/lib/sdr-fallback-data";
-import { useSdrReviewMutations, useSdrReviewQueue } from "@/lib/sdr-hooks";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	type SdrReviewQueueItem,
+	useSdrReviewMutations,
+	useSdrReviewQueue,
+} from "@/lib/sdr-hooks";
 import { SignalChip, TierBadge } from "../_components/sdr-badges";
-
-const WHITESPACE_SPLIT_REGEX = /\s+/u;
-const URL_LINK_REGEX = /https?:\/\/|www\./iu;
-
-const CLIENT_PRICE_PATTERNS = [
-	/\$\s*\d+/iu,
-	/\b\d+\s*(?:usd|dollars)\b/iu,
-	/\b(?:per\s+month|\/mo|\/month|monthly\s+fee|retainer|starting\s+at)\b/iu,
-];
-
-interface ReviewQueueEntry {
-	company: SdrCompanySummary;
-	contact: SdrCompanySummary["primaryContact"];
-	evidence: SdrEvidenceItem[];
-	message: SdrMessageItem;
-	thread: SdrThreadItem;
-}
-
-function countWords(text: string): number {
-	return text
-		.trim()
-		.split(WHITESPACE_SPLIT_REGEX)
-		.filter((w) => w.length > 0).length;
-}
-
-function hasPriceMention(text: string, citedSpans: string[]): boolean {
-	let scrubbed = text;
-	for (const span of citedSpans) {
-		if (span.trim()) {
-			scrubbed = scrubbed.replaceAll(span, "");
-		}
-	}
-	return CLIENT_PRICE_PATTERNS.some((rx) => rx.test(scrubbed));
-}
-
-function hasUrlLink(text: string): boolean {
-	return URL_LINK_REGEX.test(text);
-}
 
 function formatApproveButtonLabel(
 	isApproving: boolean,
@@ -74,21 +40,21 @@ function formatApproveButtonLabel(
 	return "Approve & Send First Email";
 }
 
-function ReviewEvidenceSidebar({
+function ReviewDraftsSidebar({
 	activeItem,
 	items,
 	onSelectMessage,
 }: {
-	activeItem: ReviewQueueEntry | null;
-	items: ReviewQueueEntry[];
+	activeItem: SdrReviewQueueItem | null;
+	items: SdrReviewQueueItem[];
 	onSelectMessage: (id: string) => void;
 }) {
 	return (
-		<div className="space-y-4 lg:col-span-5">
-			<div className="space-y-2">
-				<div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-					Pending Drafts ({items.length})
-				</div>
+		<div className="min-w-0 space-y-2 lg:sticky lg:top-6 lg:col-span-5">
+			<div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+				Pending Drafts ({items.length})
+			</div>
+			<div className="custom-scrollbar max-h-[55vh] space-y-2 overflow-y-auto p-0.5 pr-1.5 lg:max-h-[calc(100vh-16rem)]">
 				{items.map((item) => {
 					const isSelected = item.message.id === activeItem?.message.id;
 					return (
@@ -124,82 +90,90 @@ function ReviewEvidenceSidebar({
 					);
 				})}
 			</div>
+		</div>
+	);
+}
 
-			{activeItem ? (
-				<div className="border-border/70 bg-card space-y-4 rounded-xl border p-5">
-					<div className="border-border/70 space-y-1 border-b pb-3">
-						<div className="flex items-center justify-between">
-							<h2 className="text-foreground text-sm font-semibold">
-								Why {activeItem.company.name} Qualified
-							</h2>
-							<Link
-								className="text-primary text-xs font-medium hover:underline"
-								href={`/dashboard/companies?companyId=${activeItem.company.id}`}
-							>
-								Full Score →
-							</Link>
-						</div>
-						<p className="text-muted-foreground text-xs">
-							{activeItem.company.summary}
-						</p>
-						<div className="flex flex-wrap gap-1 pt-1.5">
-							{activeItem.company.signals.map((sig) => (
-								<SignalChip key={sig} signal={sig} />
-							))}
-						</div>
-					</div>
-
-					<div className="space-y-2.5">
-						<div className="flex items-center justify-between">
-							<span className="text-foreground text-xs font-semibold">
-								Fact-Checked Claims & Verbatim Evidence
-							</span>
-							<span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-								<ShieldCheck className="h-3.5 w-3.5" />
-								<span>100% Grounded</span>
-							</span>
-						</div>
-
-						{activeItem.message.citations.map((citation) => {
-							const ev = activeItem.evidence.find(
-								(e) => e.id === citation.evidenceId
-							);
-							return (
-								<div
-									className="space-y-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-3 text-xs"
-									key={`${citation.evidenceId}-${citation.span}`}
-								>
-									<div className="text-foreground font-medium">
-										Claim in draft:{" "}
-										<span className="underline decoration-emerald-500/60 decoration-wavy">
-											“{citation.span}”
-										</span>
-									</div>
-									{ev ? (
-										<div className="border-border/60 text-muted-foreground space-y-1 border-t pt-1.5 text-[11px]">
-											<div className="flex items-center justify-between">
-												<span className="text-foreground/85 font-semibold">
-													Source: {ev.title ?? ev.claim}
-												</span>
-												<a
-													className="text-primary inline-flex items-center gap-0.5 font-mono hover:underline"
-													href={ev.url}
-													rel="noopener noreferrer"
-													target="_blank"
-												>
-													<span>Verify</span>
-													<ExternalLink className="h-2.5 w-2.5" />
-												</a>
-											</div>
-											<blockquote className="italic">“{ev.quote}”</blockquote>
-										</div>
-									) : null}
-								</div>
-							);
-						})}
-					</div>
+function ReviewQualificationCard({
+	activeItem,
+}: {
+	activeItem: SdrReviewQueueItem;
+}) {
+	return (
+		<div className="border-border/70 bg-card space-y-4 rounded-xl border p-5">
+			<div className="border-border/70 space-y-1 border-b pb-3">
+				<div className="flex items-center justify-between">
+					<h2 className="text-foreground text-sm font-semibold">
+						Why {activeItem.company.name} Qualified
+					</h2>
+					<Link
+						className="text-primary text-xs font-medium hover:underline"
+						href={`/dashboard/companies?companyId=${activeItem.company.id}`}
+					>
+						Full Score →
+					</Link>
 				</div>
-			) : null}
+				<p className="text-muted-foreground text-xs">
+					{activeItem.company.summary}
+				</p>
+				<div className="flex flex-wrap gap-1 pt-1.5">
+					{activeItem.company.signals.map((sig) => (
+						<SignalChip key={sig} signal={sig} />
+					))}
+				</div>
+			</div>
+
+			<div className="space-y-2.5">
+				<div className="flex items-center justify-between">
+					<span className="text-foreground text-xs font-semibold">
+						Fact-Checked Claims & Verbatim Evidence
+					</span>
+					<span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+						<ShieldCheck className="h-3.5 w-3.5" />
+						<span>100% Grounded</span>
+					</span>
+				</div>
+
+				{activeItem.message.citations.map((citation) => {
+					const ev = activeItem.evidence.find(
+						(e) => e.id === citation.evidenceId
+					);
+					return (
+						<div
+							className="space-y-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-3 text-xs"
+							key={`${citation.evidenceId}-${citation.span}`}
+						>
+							<div className="text-foreground font-medium">
+								Claim in draft:{" "}
+								<span className="underline decoration-emerald-500/60 decoration-wavy">
+									“{citation.span}”
+								</span>
+							</div>
+							{ev ? (
+								<div className="border-border/60 text-muted-foreground space-y-1 border-t pt-1.5 text-[11px]">
+									<div className="flex items-center justify-between">
+										<span className="text-foreground/85 font-semibold">
+											Source: {ev.title ?? ev.claim}
+										</span>
+										{sanitizeExternalHttpUrl(ev.url) ? (
+											<a
+												className="text-primary inline-flex items-center gap-0.5 font-mono hover:underline"
+												href={sanitizeExternalHttpUrl(ev.url)}
+												rel="noopener noreferrer"
+												target="_blank"
+											>
+												<span>Verify</span>
+												<ExternalLink className="h-2.5 w-2.5" />
+											</a>
+										) : null}
+									</div>
+									<blockquote className="italic">“{ev.quote}”</blockquote>
+								</div>
+							) : null}
+						</div>
+					);
+				})}
+			</div>
 		</div>
 	);
 }
@@ -216,7 +190,7 @@ function ReviewDraftEditor({
 	onResetEdits,
 	onSubjectChange,
 }: {
-	activeItem: ReviewQueueEntry;
+	activeItem: SdrReviewQueueItem;
 	editedBody: string;
 	editedSubject: string;
 	isApproving: boolean;
@@ -231,10 +205,12 @@ function ReviewDraftEditor({
 	const [rejectReason, setRejectReason] = useState("");
 
 	const citedSpans = activeItem.message.citations.map((c) => c.span);
-	const wordCount = countWords(editedBody);
+	const wordCount = countEmailWords(editedBody);
 	const priceViolated =
-		hasPriceMention(editedSubject, citedSpans) ||
-		hasPriceMention(editedBody, citedSpans);
+		detectOutboundPriceViolation(
+			`${editedSubject}\n${editedBody}`,
+			citedSpans
+		) !== null;
 	const linkViolated = hasUrlLink(editedBody);
 	const wordLimitOk = wordCount > 0 && wordCount < 100;
 	const isModified =
@@ -242,7 +218,7 @@ function ReviewDraftEditor({
 		editedBody !== activeItem.message.bodyText;
 
 	return (
-		<div className="border-border/70 bg-card space-y-4 rounded-xl border p-6 lg:col-span-7">
+		<div className="border-border/70 bg-card space-y-4 rounded-xl border p-6">
 			{/* Safety Guard Pills */}
 			<div className="border-border/70 flex flex-wrap items-center justify-between gap-2 border-b pb-4">
 				<div className="flex flex-wrap items-center gap-2">
@@ -438,16 +414,22 @@ function ReviewDraftEditor({
 }
 
 export default function ReviewQueuePage() {
-	const { data: rawItems = [], isLoading } = useSdrReviewQueue();
+	const {
+		data: items = [],
+		error,
+		isError,
+		isLoading,
+		refetch,
+	} = useSdrReviewQueue();
 	const { approveEmail, rejectEmail, isApproving, isRejecting } =
 		useSdrReviewMutations();
 
-	const items = rawItems as unknown as ReviewQueueEntry[];
 	const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
 		null
 	);
 	const [editedSubject, setEditedSubject] = useState("");
 	const [editedBody, setEditedBody] = useState("");
+	const lastSyncedMessageIdRef = useRef<string | null>(null);
 
 	const activeItem = useMemo(() => {
 		if (
@@ -462,7 +444,12 @@ export default function ReviewQueuePage() {
 	}, [items, selectedMessageId]);
 
 	useEffect(() => {
-		if (activeItem) {
+		if (!activeItem) {
+			lastSyncedMessageIdRef.current = null;
+			return;
+		}
+		if (lastSyncedMessageIdRef.current !== activeItem.message.id) {
+			lastSyncedMessageIdRef.current = activeItem.message.id;
 			setEditedSubject(activeItem.message.subject);
 			setEditedBody(activeItem.message.bodyText);
 		}
@@ -472,21 +459,30 @@ export default function ReviewQueuePage() {
 		if (!activeItem) {
 			return;
 		}
-		await approveEmail({
-			bodyText: editedBody,
-			messageId: activeItem.message.id,
-			subject: editedSubject,
-		});
+		try {
+			await approveEmail({
+				bodyText: editedBody,
+				citedSpans: activeItem.message.citations.map((c) => c.span),
+				messageId: activeItem.message.id,
+				subject: editedSubject,
+			});
+		} catch {
+			// Surfaced to user by mutation onError toast
+		}
 	};
 
 	const handleReject = async (reason: string) => {
 		if (!activeItem) {
 			return;
 		}
-		await rejectEmail({
-			messageId: activeItem.message.id,
-			reason,
-		});
+		try {
+			await rejectEmail({
+				messageId: activeItem.message.id,
+				reason,
+			});
+		} catch {
+			// Surfaced to user by mutation onError toast
+		}
 	};
 
 	return (
@@ -515,7 +511,25 @@ export default function ReviewQueuePage() {
 				</div>
 			) : null}
 
-			{!isLoading && items.length === 0 ? (
+			{!isLoading && isError ? (
+				<div className="border-border/70 bg-card space-y-3 rounded-xl border p-8 text-center text-sm">
+					<p className="text-rose-600 dark:text-rose-400">
+						{error instanceof Error
+							? error.message
+							: "Failed to load review queue."}
+					</p>
+					<Button
+						onClick={() => void refetch()}
+						size="sm"
+						type="button"
+						variant="outline"
+					>
+						Retry
+					</Button>
+				</div>
+			) : null}
+
+			{!(isLoading || isError) && items.length === 0 ? (
 				<div className="border-border/70 bg-card space-y-4 rounded-xl border p-10 text-center">
 					<div className="mx-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
 						<CheckCircle2 className="h-5 w-5" />
@@ -542,28 +556,31 @@ export default function ReviewQueuePage() {
 			) : null}
 
 			{!isLoading && items.length > 0 ? (
-				<div className="grid gap-6 lg:grid-cols-12">
-					<ReviewEvidenceSidebar
+				<div className="grid items-start gap-6 lg:grid-cols-12">
+					<ReviewDraftsSidebar
 						activeItem={activeItem}
 						items={items}
 						onSelectMessage={setSelectedMessageId}
 					/>
 					{activeItem ? (
-						<ReviewDraftEditor
-							activeItem={activeItem}
-							editedBody={editedBody}
-							editedSubject={editedSubject}
-							isApproving={isApproving}
-							isRejecting={isRejecting}
-							onApprove={() => void handleApprove()}
-							onBodyChange={setEditedBody}
-							onReject={(reason) => void handleReject(reason)}
-							onResetEdits={() => {
-								setEditedSubject(activeItem.message.subject);
-								setEditedBody(activeItem.message.bodyText);
-							}}
-							onSubjectChange={setEditedSubject}
-						/>
+						<div className="min-w-0 space-y-6 lg:col-span-7">
+							<ReviewDraftEditor
+								activeItem={activeItem}
+								editedBody={editedBody}
+								editedSubject={editedSubject}
+								isApproving={isApproving}
+								isRejecting={isRejecting}
+								onApprove={() => void handleApprove()}
+								onBodyChange={setEditedBody}
+								onReject={(reason) => void handleReject(reason)}
+								onResetEdits={() => {
+									setEditedSubject(activeItem.message.subject);
+									setEditedBody(activeItem.message.bodyText);
+								}}
+								onSubjectChange={setEditedSubject}
+							/>
+							<ReviewQualificationCard activeItem={activeItem} />
+						</div>
 					) : null}
 				</div>
 			) : null}

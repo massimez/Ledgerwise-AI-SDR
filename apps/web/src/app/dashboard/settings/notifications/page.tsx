@@ -8,7 +8,6 @@ import {
 } from "@workspace/ui/components/settings-shell";
 import { useNotificationPreferences } from "@/lib/notification-hooks";
 import { PreferenceMatrixContent } from "./_components/preference-matrix-content";
-import { PushSettingsSection } from "./_components/push-settings-section";
 
 export default function NotificationSettingsPage() {
 	const {
@@ -22,15 +21,13 @@ export default function NotificationSettingsPage() {
 
 	return (
 		<SettingsPage
-			description="Choose which workspace events trigger alerts and manage Web Push delivery for this browser."
+			description="Choose which SDR workspace events (review drafts ready, escalations, and booked discovery calls) trigger alerts."
 			headingLevel="h2"
 			title="Notifications & Delivery"
 		>
-			<PushSettingsSection />
-
 			<SettingsSection>
 				<SettingsSectionHeader
-					description="Fine-tune delivery channels per event category."
+					description="Fine-tune in-app and email delivery preferences per event category."
 					title="Channel Preferences"
 				/>
 				<SettingsSectionContent>
