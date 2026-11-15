@@ -2,7 +2,6 @@ import {
 	DEFAULT_LEDGERWISE_ICP,
 	DEFAULT_LEDGERWISE_PLAYBOOK,
 	db,
-	seedLedgerwiseWorkspace,
 } from "@workspace/db";
 import {
 	type SdrAiDisclosureMode,
@@ -12,6 +11,7 @@ import {
 	sdrSettings,
 	suppressions,
 } from "@workspace/db/schema";
+import { seedLedgerwiseWorkspace } from "@workspace/db/seed";
 import { count, desc, eq } from "drizzle-orm";
 import { withOrg } from "../../../lib/tenant";
 

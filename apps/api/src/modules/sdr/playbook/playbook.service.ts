@@ -1,4 +1,6 @@
-import { NotFoundError } from "../../../lib/errors";
+import { LEDGERWISE_ORG_ID } from "@workspace/db";
+import { env } from "../../../env";
+import { ForbiddenError, NotFoundError } from "../../../lib/errors";
 import {
 	countSuppressionsByOrg,
 	createDefaultSettings,
@@ -53,6 +55,16 @@ export async function updateSdrSettings(
 }
 
 /** Reset sandbox SDR data and re-seed the default Ledgerwise demo scenario. */
-export async function resetDemoData() {
+export async function resetDemoData(organizationId: string) {
+	if (env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") {
+		throw new ForbiddenError(
+			"Demo reset is disabled in production unless ALLOW_SEED=true"
+		);
+	}
+	if (organizationId !== LEDGERWISE_ORG_ID) {
+		throw new ForbiddenError(
+			"Demo reset is only allowed for the Ledgerwise sandbox workspace"
+		);
+	}
 	return await resetDemoWorkspace();
 }

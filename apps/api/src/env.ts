@@ -1,3 +1,8 @@
+import {
+	DEFAULT_SDR_MODEL_FAST,
+	DEFAULT_SDR_MODEL_SMART,
+	isSafeHttpUrl,
+} from "@workspace/ai-core/contracts";
 import { z } from "zod";
 import { APP_CONFIG } from "./lib/app-config";
 import { LOG_FORMATS, LOG_LEVELS, normalizeOptionalLogEnv } from "./lib/logger";
@@ -6,14 +11,7 @@ const DEFAULT_DEV_SECRET =
 	"default_development_secret_key_32_characters_minimum";
 const MODEL_ID_REGEX = /^[a-z0-9-]+\/.+$/iu;
 
-function isValidHttpUrl(value: string): boolean {
-	try {
-		const parsed = new URL(value);
-		return parsed.protocol === "http:" || parsed.protocol === "https:";
-	} catch {
-		return false;
-	}
-}
+const isValidHttpUrl = isSafeHttpUrl;
 
 function isValidRedisUrl(value: string): boolean {
 	try {
@@ -130,14 +128,9 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 			OPENAI_API_KEY: optionalNonEmptyStringSchema,
 			ANTHROPIC_API_KEY: optionalNonEmptyStringSchema,
 			OPENROUTER_API_KEY: optionalNonEmptyStringSchema,
-			SDR_MODEL_FAST: z
-				.string()
-				.trim()
-				.default("openrouter/google/gemini-2.5-flash"),
-			SDR_MODEL_SMART: z
-				.string()
-				.trim()
-				.default("openrouter/anthropic/claude-sonnet-4.5"),
+			SDR_GEMINI_MODEL: optionalNonEmptyStringSchema,
+			SDR_MODEL_FAST: z.string().trim().default(DEFAULT_SDR_MODEL_FAST),
+			SDR_MODEL_SMART: z.string().trim().default(DEFAULT_SDR_MODEL_SMART),
 			OUTBOUND_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
 			SANDBOX_RECIPIENT_EMAIL: z.string().trim().default(""),
 			INBOUND_EMAIL_DOMAIN: z.string().trim().default("inbox.ledgerwise.demo"),
@@ -154,7 +147,7 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 					MODEL_ID_REGEX,
 					"MASTRA_DEFAULT_MODEL must use the provider/model format (e.g. openai/gpt-5-mini)"
 				)
-				.default("google/gemini-2.5-flash"),
+				.default("google/gemini-3.5-flash-lite"),
 			MASTRA_EMBEDDING_MODEL: z
 				.string()
 				.trim()
@@ -213,6 +206,8 @@ function createApiEnvSchema(rawInput: Record<string, string | undefined>) {
 				"REDIS_URL",
 				"BETTER_AUTH_URL",
 				"CORS_ORIGIN",
+				"RESEND_WEBHOOK_SECRET",
+				"CALCOM_WEBHOOK_SECRET",
 			] as const;
 
 			for (const key of requiredInProd) {

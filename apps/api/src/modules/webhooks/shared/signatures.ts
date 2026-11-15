@@ -16,10 +16,7 @@ export function verifyHmacSignature(options: {
 	secret: string;
 	signatureHeader: string | undefined;
 }): boolean {
-	if (!options.secret) {
-		return true;
-	}
-	if (!options.signatureHeader) {
+	if (!(options.secret && options.signatureHeader)) {
 		return false;
 	}
 
@@ -40,6 +37,9 @@ export function verifyHmacSignature(options: {
 }
 
 /** Verify Svix / Resend v1 webhook signature (`v1,<base64>`) across signed timestamped content. */
+const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 300;
+const DIGITS_ONLY_REGEX = /^\d+$/u;
+
 export function verifyResendWebhookSignature(options: {
 	payload: string;
 	secret: string;
@@ -49,10 +49,28 @@ export function verifyResendWebhookSignature(options: {
 	xWebhookSignature?: string;
 }): boolean {
 	if (!options.secret) {
-		return true;
+		return false;
 	}
 
-	if (options.svixId && options.svixTimestamp && options.svixSignature) {
+	const hasAnySvixHeader = Boolean(
+		options.svixId || options.svixTimestamp || options.svixSignature
+	);
+	if (hasAnySvixHeader) {
+		if (!(options.svixId && options.svixTimestamp && options.svixSignature)) {
+			return false;
+		}
+		if (!DIGITS_ONLY_REGEX.test(options.svixTimestamp)) {
+			return false;
+		}
+		const timestampSeconds = Number.parseInt(options.svixTimestamp, 10);
+		const nowSeconds = Math.floor(Date.now() / 1000);
+		if (
+			!Number.isSafeInteger(timestampSeconds) ||
+			Math.abs(nowSeconds - timestampSeconds) > SVIX_TIMESTAMP_TOLERANCE_SECONDS
+		) {
+			return false;
+		}
+
 		const cleanedSecret = options.secret.startsWith("whsec_")
 			? options.secret.slice(6)
 			: options.secret;
@@ -67,11 +85,9 @@ export function verifyResendWebhookSignature(options: {
 			.map((token) => token.replace(V1_PREFIX_REGEX, "").trim())
 			.filter(Boolean);
 
-		if (
-			sigParts.some((candidate) => safeCompareDigest(candidate, expectedBase64))
-		) {
-			return true;
-		}
+		return sigParts.some((candidate) =>
+			safeCompareDigest(candidate, expectedBase64)
+		);
 	}
 
 	return verifyHmacSignature({

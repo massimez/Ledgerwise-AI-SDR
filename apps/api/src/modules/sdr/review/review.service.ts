@@ -1,3 +1,5 @@
+import { detectOutboundPriceViolation } from "@workspace/ai-core";
+import { env } from "../../../env";
 import {
 	ConflictError,
 	NotFoundError,
@@ -5,12 +7,16 @@ import {
 } from "../../../lib/errors";
 import { logWarning } from "../../../lib/logger";
 import { enqueueSdrOutboundJob, enqueueSdrPipelineJob } from "../queue";
-import { detectOutboundPriceViolation } from "../shared/guards";
 import {
 	findContactSuppression,
+	findThreadById,
+	getDailySendCapStatus,
+	markMessageSentFallback,
+	revertApprovedDraftAfterQueueFailure,
+} from "../shared/sdr.repository";
+import {
 	findMessageById,
 	findReviewQueueDataset,
-	findThreadById,
 	markDraftApproved,
 	markDraftRejected,
 	setThreadPendingJob,
@@ -59,7 +65,7 @@ export async function getReviewQueue(organizationId: string) {
 		.filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-/** Validate guards, approve an outreach draft, mark it sent, and enqueue worker delivery. */
+/** Validate guards, approve an outreach draft, and enqueue worker delivery. */
 export async function approveReviewMessage(params: {
 	bodyText?: string;
 	messageId: string;
@@ -71,12 +77,19 @@ export async function approveReviewMessage(params: {
 	if (!msg) {
 		throw new NotFoundError("Draft message");
 	}
+	if (msg.status !== "pending_review") {
+		throw new ConflictError(
+			`Draft message cannot be approved from status "${msg.status}".`
+		);
+	}
 
 	const finalBody = params.bodyText?.trim() || msg.bodyText;
 	const finalSubject = params.subject?.trim() || msg.subject;
 	const citedSpans = (msg.citations ?? []).map((c) => c.span);
 
-	if (detectOutboundPriceViolation(finalBody, citedSpans)) {
+	if (
+		detectOutboundPriceViolation(`${finalSubject}\n${finalBody}`, citedSpans)
+	) {
 		throw new ValidationError(
 			"Ledgerwise policy violation: outbound email must never quote a dollar price or monthly fee. Pricing is discussed on a call.",
 			"bodyText"
@@ -100,19 +113,35 @@ export async function approveReviewMessage(params: {
 		}
 	}
 
-	const updatedMessage = await markDraftApproved({
+	const capStatus = await getDailySendCapStatus(params.organizationId, {
+		excludeMessageId: msg.id,
+	});
+	if (capStatus.reached) {
+		throw new ValidationError(
+			`Daily send cap (${capStatus.cap}) reached for today. Increase the cap in Playbook Settings or try again tomorrow.`
+		);
+	}
+
+	const now = new Date();
+	const approved = await markDraftApproved({
 		bodyText: finalBody,
 		companyId: thread.companyId,
 		decisionSummary:
 			finalBody === msg.bodyText
-				? "Approved by sales team and dispatched via sandbox send gate."
+				? "Approved by sales team and queued for delivery."
 				: "Edited and approved by sales team; passed price & suppression guards.",
 		messageId: msg.id,
-		now: new Date(),
+		now,
+		organizationId: params.organizationId,
 		subject: finalSubject,
 		threadId: thread.id,
 		userId: params.userId,
 	});
+	if (!approved) {
+		throw new ConflictError(
+			"Draft message could not be approved because its status changed."
+		);
+	}
 
 	try {
 		await enqueueSdrOutboundJob({
@@ -121,14 +150,37 @@ export async function approveReviewMessage(params: {
 			threadId: thread.id,
 		});
 	} catch (error) {
+		if (env.NODE_ENV === "production") {
+			await revertApprovedDraftAfterQueueFailure({
+				companyId: thread.companyId,
+				messageId: msg.id,
+				organizationId: params.organizationId,
+				previousBodyText: msg.bodyText,
+				previousCompanyStatus: approved.previousCompanyStatus,
+				previousDecisionSummary: msg.decisionSummary,
+				previousLastMessageAt: thread.lastMessageAt,
+				previousSubject: msg.subject,
+				previousThreadStatus: thread.status,
+				threadId: thread.id,
+			}).catch((rollbackError) => {
+				logWarning(
+					"SDRReviewService:approveReviewMessage",
+					"Failed to revert approved draft after queue error",
+					{ error: String(rollbackError), messageId: msg.id }
+				);
+			});
+			throw error;
+		}
 		logWarning(
 			"SDRReviewService:approveReviewMessage",
 			"Redis queue unavailable in dev; message marked sent in sandbox mode",
 			{ error: String(error), messageId: msg.id }
 		);
+		const fallbackMsg = await markMessageSentFallback(msg.id, now);
+		return fallbackMsg ?? approved.updatedMessage;
 	}
 
-	return updatedMessage;
+	return approved.updatedMessage;
 }
 
 /** Reject a pending outreach draft with a human reason and close its thread. */
@@ -142,12 +194,24 @@ export async function rejectReviewMessage(params: {
 	if (!msg) {
 		throw new NotFoundError("Draft message");
 	}
+	if (msg.status !== "pending_review") {
+		throw new ConflictError(
+			`Draft message cannot be rejected from status "${msg.status}".`
+		);
+	}
 
-	return await markDraftRejected({
+	const rejected = await markDraftRejected({
 		messageId: msg.id,
+		organizationId: params.organizationId,
 		reason: params.reason,
 		threadId: msg.threadId,
 	});
+	if (!rejected) {
+		throw new ConflictError(
+			"Draft message could not be rejected because its status changed."
+		);
+	}
+	return rejected;
 }
 
 /** Enqueue regeneration of a pending outreach draft with optional human instruction. */
@@ -161,6 +225,11 @@ export async function regenerateReviewDraft(params: {
 	if (!msg) {
 		throw new NotFoundError("Draft message");
 	}
+	if (msg.status !== "pending_review") {
+		throw new ConflictError(
+			`Draft message cannot be regenerated from status "${msg.status}".`
+		);
+	}
 
 	const thread = await findThreadById(params.organizationId, msg.threadId);
 	if (!thread) {
@@ -168,7 +237,7 @@ export async function regenerateReviewDraft(params: {
 	}
 
 	const pendingJobId = `regen_${msg.id.slice(0, 8)}_${Date.now()}`;
-	await setThreadPendingJob(thread.id, pendingJobId);
+	await setThreadPendingJob(params.organizationId, thread.id, pendingJobId);
 
 	let queued = false;
 	try {
@@ -182,6 +251,18 @@ export async function regenerateReviewDraft(params: {
 		});
 		queued = true;
 	} catch (error) {
+		await setThreadPendingJob(params.organizationId, thread.id, null).catch(
+			(clearError) => {
+				logWarning(
+					"SDRReviewService:regenerateReviewDraft",
+					"Failed to clear pendingJobId after queue error",
+					{ error: String(clearError), messageId: msg.id, threadId: thread.id }
+				);
+			}
+		);
+		if (env.NODE_ENV === "production") {
+			throw error;
+		}
 		logWarning(
 			"SDRReviewService:regenerateReviewDraft",
 			"Redis queue unavailable; regenerate draft request recorded without worker",

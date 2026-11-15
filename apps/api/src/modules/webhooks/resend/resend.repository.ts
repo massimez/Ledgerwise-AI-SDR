@@ -1,18 +1,27 @@
 import { db } from "@workspace/db";
 import {
+	companies,
 	contacts,
 	messages,
 	suppressions,
 	threads,
 } from "@workspace/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 
 /** Find contacts whose email matches normalized bounce/complaint recipient addresses. */
 export async function findContactsByEmails(emails: string[]) {
+	const normalized = [
+		...new Set(
+			emails.map((email) => email.trim().toLowerCase()).filter(Boolean)
+		),
+	];
+	if (normalized.length === 0) {
+		return [];
+	}
 	return await db
 		.select()
 		.from(contacts)
-		.where(inArray(contacts.email, emails))
+		.where(inArray(sql`lower(${contacts.email})`, normalized))
 		.limit(20);
 }
 
@@ -32,24 +41,43 @@ export async function suppressBouncedContacts(
 		)
 		.map((contact) => ({
 			companyId: contact.companyId,
-			email: contact.email,
+			email: contact.email.trim().toLowerCase(),
 			organizationId: contact.organizationId,
 			reason: "bounce" as const,
 		}));
 
-	if (suppressionRows.length > 0) {
-		await db.insert(suppressions).values(suppressionRows).onConflictDoNothing();
-	}
-
 	const contactIds = matchedContacts.map((contact) => contact.id);
-	await db
-		.update(threads)
-		.set({
-			aiMode: "paused",
-			handoffReason: `Resend ${eventType}`,
-			status: "opted_out",
-		})
-		.where(inArray(threads.contactId, contactIds));
+	const companyIds = [
+		...new Set(matchedContacts.map((contact) => contact.companyId)),
+	];
+
+	await db.transaction(async (tx) => {
+		if (suppressionRows.length > 0) {
+			await tx
+				.insert(suppressions)
+				.values(suppressionRows)
+				.onConflictDoNothing();
+		}
+
+		if (contactIds.length > 0) {
+			await tx
+				.update(threads)
+				.set({
+					aiMode: "paused",
+					handoffReason: `Resend ${eventType}`,
+					pendingJobId: null,
+					status: "opted_out",
+				})
+				.where(inArray(threads.contactId, contactIds));
+		}
+
+		if (companyIds.length > 0) {
+			await tx
+				.update(companies)
+				.set({ status: "suppressed" })
+				.where(inArray(companies.id, companyIds));
+		}
+	});
 }
 
 /** Look up an SDR thread by its unique reply-plus address token. */
@@ -87,7 +115,11 @@ export async function findThreadByInReplyTo(providerMessageId: string) {
 /** Check whether an inbound Resend `email_id` has already been recorded. */
 export async function findMessageByProviderId(providerMessageId: string) {
 	const [duplicate] = await db
-		.select({ id: messages.id })
+		.select({
+			classification: messages.classification,
+			id: messages.id,
+			threadId: messages.threadId,
+		})
 		.from(messages)
 		.where(eq(messages.providerMessageId, providerMessageId))
 		.limit(1);
@@ -95,7 +127,7 @@ export async function findMessageByProviderId(providerMessageId: string) {
 	return duplicate ?? null;
 }
 
-/** Insert a newly received webhook message row onto a thread. */
+/** Insert a newly received webhook message row onto a thread (race-safe on providerMessageId). */
 export async function insertInboundWebhookMessage(input: {
 	bodyText: string;
 	inReplyTo: string | null;
@@ -118,6 +150,7 @@ export async function insertInboundWebhookMessage(input: {
 			subject: input.subject,
 			threadId: input.threadId,
 		})
+		.onConflictDoNothing({ target: messages.providerMessageId })
 		.returning({ id: messages.id });
 
 	return inserted ?? null;

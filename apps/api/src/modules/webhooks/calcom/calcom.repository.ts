@@ -31,27 +31,50 @@ export async function updateMeetingFromWebhook(
 	await db.update(meetings).set(patch).where(eq(meetings.id, meetingId));
 }
 
-/** Mark linked thread as booked (AI paused) and company as `meeting_booked`. */
+/** Update meeting and transactionally mark linked thread + company booked. */
 export async function markBookingConfirmed(params: {
 	companyId: string;
+	meetingId?: string;
+	meetingPatch?: {
+		endAt?: Date;
+		meetingUrl?: string;
+		startAt?: Date;
+		status: MeetingStatus;
+	};
 	organizationId: string;
 	threadId: string | null;
 }) {
-	await Promise.all([
-		params.threadId
-			? db
-					.update(threads)
-					.set({ aiMode: "paused", status: "booked" })
-					.where(
-						and(
-							eq(threads.id, params.threadId),
-							eq(threads.organizationId, params.organizationId)
-						)
+	await db.transaction(async (tx) => {
+		if (params.meetingId && params.meetingPatch) {
+			await tx
+				.update(meetings)
+				.set(params.meetingPatch)
+				.where(
+					and(
+						eq(meetings.id, params.meetingId),
+						eq(meetings.organizationId, params.organizationId)
 					)
-			: Promise.resolve(),
-		db
+				);
+		}
+		if (params.threadId) {
+			await tx
+				.update(threads)
+				.set({ aiMode: "paused", status: "booked" })
+				.where(
+					and(
+						eq(threads.id, params.threadId),
+						eq(threads.organizationId, params.organizationId)
+					)
+				);
+		}
+		await tx
 			.update(companies)
 			.set({ status: "meeting_booked" })
-			.where(eq(companies.id, params.companyId)),
-	]);
+			.where(
+				and(
+					eq(companies.id, params.companyId),
+					eq(companies.organizationId, params.organizationId)
+				)
+			);
+	});
 }

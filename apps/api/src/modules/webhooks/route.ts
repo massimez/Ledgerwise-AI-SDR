@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { env } from "../../env";
 import { logWarning } from "../../lib/logger";
+import { rateLimiter } from "../../middleware/rate-limiter";
 import { calcomWebhookSchema } from "./calcom/calcom.schema";
 import { processCalcomWebhookEvent } from "./calcom/calcom.service";
 import { resendWebhookSchema } from "./resend/resend.schema";
@@ -26,6 +27,7 @@ export {
 } from "./shared/signatures";
 
 export const webhookRoutes = new Hono()
+	.use("*", rateLimiter(60_000, 120))
 	.post("/resend", async (c) => {
 		const rawBody = await c.req.text();
 		const validSignature = verifyResendWebhookSignature({

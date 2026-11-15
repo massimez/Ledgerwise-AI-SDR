@@ -1,3 +1,4 @@
+import { sanitizeExternalHttpUrl } from "@workspace/ai-core/contracts";
 import { logInfo } from "../../../lib/logger";
 import {
 	findMeetingByCalBookingUid,
@@ -21,6 +22,8 @@ export async function processCalcomWebhookEvent(
 		return { received: true, unmatched: uid };
 	}
 
+	const safeMeetingUrl = sanitizeExternalHttpUrl(payload.meetingUrl);
+
 	if (triggerEvent === "BOOKING_CANCELLED") {
 		await updateMeetingFromWebhook(existingMeeting.id, {
 			status: "cancelled",
@@ -28,17 +31,18 @@ export async function processCalcomWebhookEvent(
 	} else if (triggerEvent === "BOOKING_RESCHEDULED") {
 		await updateMeetingFromWebhook(existingMeeting.id, {
 			...(payload.endTime ? { endAt: new Date(payload.endTime) } : {}),
-			...(payload.meetingUrl ? { meetingUrl: payload.meetingUrl } : {}),
+			...(safeMeetingUrl ? { meetingUrl: safeMeetingUrl } : {}),
 			...(payload.startTime ? { startAt: new Date(payload.startTime) } : {}),
 			status: "rescheduled",
 		});
 	} else if (triggerEvent === "BOOKING_CREATED") {
-		await updateMeetingFromWebhook(existingMeeting.id, {
-			...(payload.meetingUrl ? { meetingUrl: payload.meetingUrl } : {}),
-			status: "scheduled",
-		});
 		await markBookingConfirmed({
 			companyId: existingMeeting.companyId,
+			meetingId: existingMeeting.id,
+			meetingPatch: {
+				...(safeMeetingUrl ? { meetingUrl: safeMeetingUrl } : {}),
+				status: "scheduled",
+			},
 			organizationId: existingMeeting.organizationId,
 			threadId: existingMeeting.threadId,
 		});

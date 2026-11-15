@@ -1,15 +1,23 @@
+import { detectOutboundPriceViolation } from "@workspace/ai-core";
 import type { ThreadStatus } from "@workspace/db/schema";
+import { env } from "../../../env";
 import {
 	ConflictError,
 	NotFoundError,
 	ValidationError,
 } from "../../../lib/errors";
 import { logInfo, logWarning } from "../../../lib/logger";
-import { enqueueSdrInboundJob } from "../queue";
-import { detectOutboundPriceViolation } from "../shared/guards";
+import { enqueueSdrInboundJob, enqueueSdrOutboundJob } from "../queue";
+import {
+	findContactSuppression,
+	findThreadById,
+	getDailySendCapStatus,
+	markMessageSentFallback,
+	rollbackHumanReplyAfterQueueFailure,
+} from "../shared/sdr.repository";
+import { recoverInboundReplyFailure } from "./inbound-executor";
 import { executeOfflineInboundFallback } from "./threads.fallback";
 import {
-	findThreadById,
 	findThreadRelations,
 	findThreadsWithContextByOrg,
 	insertHumanOutboundMessage,
@@ -74,7 +82,7 @@ export async function takeoverThread(params: {
 		throw new NotFoundError("Conversation thread");
 	}
 
-	return await updateThreadControlState(thread.id, {
+	return await updateThreadControlState(params.organizationId, thread.id, {
 		aiMode: "paused",
 		ownerUserId: params.userId,
 		status: "human",
@@ -97,14 +105,14 @@ export async function releaseThreadToAi(params: {
 		);
 	}
 
-	return await updateThreadControlState(thread.id, {
+	return await updateThreadControlState(params.organizationId, thread.id, {
 		aiMode: "auto",
 		handoffReason: null,
 		status: "active",
 	});
 }
 
-/** Send a manual human reply on a thread after enforcing opt-out and price guards. */
+/** Queue a manual human reply on a thread after enforcing opt-out, suppression, and price guards. */
 export async function sendHumanReply(params: {
 	bodyText: string;
 	organizationId: string;
@@ -119,11 +127,16 @@ export async function sendHumanReply(params: {
 		);
 	}
 
-	if (detectOutboundPriceViolation(params.bodyText)) {
-		throw new ValidationError(
-			"Ledgerwise policy violation: never quote a price in email. Pricing is discussed on a call.",
-			"bodyText"
+	if (detail.thread.contactId) {
+		const suppression = await findContactSuppression(
+			params.organizationId,
+			detail.thread.contactId
 		);
+		if (suppression) {
+			throw new ConflictError(
+				`Cannot send email: ${suppression.email} is on the suppression list (${suppression.reason}).`
+			);
+		}
 	}
 
 	const lastSubject =
@@ -133,21 +146,110 @@ export async function sendHumanReply(params: {
 		params.subject?.trim() ||
 		(lastSubject.startsWith("Re:") ? lastSubject : `Re: ${lastSubject}`);
 
-	return await insertHumanOutboundMessage({
+	if (detectOutboundPriceViolation(`${subject}\n${params.bodyText}`)) {
+		throw new ValidationError(
+			"Ledgerwise policy violation: never quote a price in email. Pricing is discussed on a call.",
+			"bodyText"
+		);
+	}
+
+	const capStatus = await getDailySendCapStatus(params.organizationId);
+	if (capStatus.reached) {
+		throw new ValidationError(
+			`Daily send cap (${capStatus.cap}) reached for today. Increase the cap in Playbook Settings or try again tomorrow.`
+		);
+	}
+
+	const now = new Date();
+	const createdMessage = await insertHumanOutboundMessage({
 		bodyText: params.bodyText.trim(),
-		now: new Date(),
+		now,
 		organizationId: params.organizationId,
 		subject,
 		threadId: detail.thread.id,
 		userId: params.userId,
 	});
+
+	if (!createdMessage) {
+		return null;
+	}
+
+	try {
+		await enqueueSdrOutboundJob({
+			messageId: createdMessage.id,
+			organizationId: params.organizationId,
+			threadId: detail.thread.id,
+		});
+	} catch (error) {
+		if (env.NODE_ENV === "production") {
+			await rollbackHumanReplyAfterQueueFailure({
+				messageId: createdMessage.id,
+				organizationId: params.organizationId,
+				previousAiMode: detail.thread.aiMode,
+				previousHandoffReason: detail.thread.handoffReason,
+				previousLastMessageAt: detail.thread.lastMessageAt,
+				previousOwnerUserId: detail.thread.ownerUserId,
+				previousThreadStatus: detail.thread.status,
+				threadId: detail.thread.id,
+			}).catch((rollbackError) => {
+				logWarning(
+					"SDRThreadsService:sendHumanReply",
+					"Failed to rollback human reply state after queue error",
+					{ error: String(rollbackError), messageId: createdMessage.id }
+				);
+			});
+			throw error;
+		}
+		logWarning(
+			"SDRThreadsService:sendHumanReply",
+			"Redis queue unavailable in dev; human reply marked sent in sandbox mode",
+			{ error: String(error), messageId: createdMessage.id }
+		);
+		return (
+			(await markMessageSentFallback(createdMessage.id, now)) ?? createdMessage
+		);
+	}
+
+	return createdMessage;
+}
+
+async function runOfflineInboundSafely(params: {
+	inboundMessageId: string;
+	organizationId: string;
+	threadId: string;
+}) {
+	try {
+		await executeOfflineInboundFallback({
+			inboundMessageId: params.inboundMessageId,
+			organizationId: params.organizationId,
+			threadId: params.threadId,
+		});
+	} catch (err) {
+		const reason =
+			err instanceof Error ? err.message : "Offline inbound pipeline error";
+		logWarning(
+			"SDRThreadsService:executeOfflineInboundFallback",
+			"Offline inbound pipeline error",
+			{ error: reason }
+		);
+		await recoverInboundReplyFailure({
+			organizationId: params.organizationId,
+			reason: `Inbound evaluation failed: ${reason}`,
+			threadId: params.threadId,
+		}).catch((recoveryErr) => {
+			logWarning(
+				"SDRThreadsService:executeOfflineInboundFallback",
+				"Failed to persist inbound fallback recovery state",
+				{ error: String(recoveryErr), threadId: params.threadId }
+			);
+		});
+	}
 }
 
 /** Simulate a prospect reply in the inbox simulator and trigger the BullMQ or offline pipeline. */
 export async function simulateInboundReply(params: {
 	bodyText: string;
 	organizationId: string;
-	preset?: string;
 	threadId: string;
 }) {
 	const detail = await getThreadDetail(params.organizationId, params.threadId);
@@ -183,27 +285,33 @@ export async function simulateInboundReply(params: {
 		});
 		enqueuedToWorker = true;
 	} catch (error) {
+		if (env.NODE_ENV === "production") {
+			await recoverInboundReplyFailure({
+				organizationId: params.organizationId,
+				reason: "Inbound queue unavailable; simulated reply paused for review.",
+				threadId: detail.thread.id,
+			}).catch((recoveryErr) => {
+				logWarning(
+					"SDRThreadsService:simulateInboundReply",
+					"Failed to pause thread after inbound queue error",
+					{ error: String(recoveryErr), threadId: detail.thread.id }
+				);
+			});
+			throw error;
+		}
 		logInfo(
 			"SDRThreadsService:simulateInboundReply",
-			"BullMQ Redis offline or local dev mode; running async pipeline fallback",
+			"BullMQ Redis offline in dev mode; running async pipeline fallback",
 			{ error: String(error), jobId }
 		);
 	}
 
-	if (!enqueuedToWorker) {
+	if (!enqueuedToWorker && env.NODE_ENV !== "production") {
 		setTimeout(() => {
-			executeOfflineInboundFallback({
-				inboundBody: params.bodyText,
+			void runOfflineInboundSafely({
 				inboundMessageId: inboundMsg.id,
 				organizationId: params.organizationId,
-				subject,
 				threadId: detail.thread.id,
-			}).catch((err: unknown) => {
-				logWarning(
-					"SDRThreadsService:executeOfflineInboundFallback",
-					"Offline inbound pipeline error",
-					{ error: String(err) }
-				);
 			});
 		}, 900);
 	}

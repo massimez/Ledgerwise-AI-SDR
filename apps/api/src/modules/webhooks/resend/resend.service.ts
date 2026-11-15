@@ -51,52 +51,91 @@ async function handleResendBounce(
 	await suppressBouncedContacts(eventType, matchedContacts);
 }
 
+async function queueInboundMessageJob(params: {
+	messageId: string;
+	organizationId: string;
+	threadId: string;
+}) {
+	const job = await enqueueSdrInboundJob({
+		inboundMessageId: params.messageId,
+		organizationId: params.organizationId,
+		source: "webhook",
+		threadId: params.threadId,
+	});
+
+	await markThreadInboundQueued(
+		params.threadId,
+		job.id ? String(job.id) : params.messageId
+	);
+}
+
 async function handleResendInbound(data: ResendWebhookData) {
 	const thread = await findTargetThread(data);
 	if (!thread) {
 		return { unmatched: true };
 	}
 
-	if (data.email_id) {
-		const duplicate = await findMessageByProviderId(data.email_id);
-		if (duplicate) {
-			return { deduplicated: true };
+	let existing = data.email_id
+		? await findMessageByProviderId(data.email_id)
+		: null;
+
+	if (!existing) {
+		const bodyText = (data.text ?? data.html ?? "").trim();
+		const inReplyTo = data.in_reply_to ?? data.headers?.["in-reply-to"] ?? null;
+		const inserted = await insertInboundWebhookMessage({
+			bodyText: bodyText.length > 0 ? bodyText : "(empty email body)",
+			inReplyTo,
+			organizationId: thread.organizationId,
+			providerMessageId: data.email_id ?? null,
+			subject: data.subject ?? "Re: Ledgerwise",
+			threadId: thread.id,
+		});
+
+		if (inserted) {
+			await queueInboundMessageJob({
+				messageId: inserted.id,
+				organizationId: thread.organizationId,
+				threadId: thread.id,
+			});
+
+			logInfo("Webhooks:Resend", "Queued inbound reply job", {
+				messageId: inserted.id,
+				threadId: thread.id,
+			});
+
+			return { messageId: inserted.id };
+		}
+
+		if (data.email_id) {
+			existing = await findMessageByProviderId(data.email_id);
 		}
 	}
 
-	const bodyText = (data.text ?? data.html ?? "").trim();
-	const inReplyTo = data.in_reply_to ?? data.headers?.["in-reply-to"] ?? null;
-	const inserted = await insertInboundWebhookMessage({
-		bodyText: bodyText.length > 0 ? bodyText : "(empty email body)",
-		inReplyTo,
-		organizationId: thread.organizationId,
-		providerMessageId: data.email_id ?? null,
-		subject: data.subject ?? "Re: Ledgerwise",
-		threadId: thread.id,
-	});
-
-	if (!inserted) {
+	if (!existing) {
 		return {};
 	}
 
-	const job = await enqueueSdrInboundJob({
-		inboundMessageId: inserted.id,
-		organizationId: thread.organizationId,
-		source: "webhook",
-		threadId: thread.id,
-	});
+	// Recover dropped/unprocessed webhook deliveries on provider retry
+	if (
+		existing.classification === null &&
+		!thread.pendingJobId &&
+		thread.status !== "opted_out"
+	) {
+		await queueInboundMessageJob({
+			messageId: existing.id,
+			organizationId: thread.organizationId,
+			threadId: thread.id,
+		});
 
-	await markThreadInboundQueued(
-		thread.id,
-		job.id ? String(job.id) : inserted.id
-	);
+		logInfo("Webhooks:Resend", "Re-queued unclassified inbound reply job", {
+			messageId: existing.id,
+			threadId: thread.id,
+		});
 
-	logInfo("Webhooks:Resend", "Queued inbound reply job", {
-		messageId: inserted.id,
-		threadId: thread.id,
-	});
+		return { messageId: existing.id, retried: true };
+	}
 
-	return { messageId: inserted.id };
+	return { deduplicated: true };
 }
 
 /** Dispatch validated Resend webhook events for bounces, complaints, and inbound replies. */

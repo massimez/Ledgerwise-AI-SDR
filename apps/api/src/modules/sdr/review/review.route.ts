@@ -6,6 +6,7 @@ import {
 } from "../../../lib/create-hono-app";
 import { getActiveOrgContext } from "../../../lib/tenant";
 import { hasOrgPermission } from "../../../middleware/org-permission";
+import { rateLimiter } from "../../../middleware/rate-limiter";
 import {
 	approveMessageSchema,
 	messageIdParamSchema,
@@ -65,6 +66,10 @@ export const reviewRoutes = createRouter()
 	.post(
 		"/:messageId/regenerate",
 		hasOrgPermission("outreach:approve"),
+		rateLimiter(60_000, 15, {
+			identity: "actor",
+			operation: "sdr:regenerate",
+		}),
 		paramValidator(messageIdParamSchema),
 		jsonValidator(regenerateDraftSchema),
 		async (c) => {

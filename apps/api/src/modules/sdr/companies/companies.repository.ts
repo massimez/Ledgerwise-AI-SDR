@@ -10,22 +10,68 @@ import {
 	qualificationCriteria,
 	threads,
 } from "@workspace/db/schema";
-import { asc, desc, eq, ilike, or } from "drizzle-orm";
+import { asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { withOrg } from "../../../lib/tenant";
 
+export type CompanySortField =
+	| "score_desc"
+	| "score_asc"
+	| "recent"
+	| "oldest"
+	| "name_asc";
+
 export interface ListCompaniesFilters {
+	includeHidden?: boolean;
+	limit?: number;
+	offset?: number;
 	q?: string;
-	sort?: "score_desc" | "score_asc" | "recent";
+	signal?: string;
+	sort?: CompanySortField;
 	status?: CompanyStatus;
 	tier?: CompanyTier;
 }
 
-/** Query companies for an organization along with primary contacts and thread summaries. */
+function resolveCompanyOrderBy(sort: CompanySortField | undefined) {
+	switch (sort) {
+		case "score_asc":
+			return [
+				asc(companies.score),
+				desc(companies.createdAt),
+				asc(companies.id),
+			];
+		case "recent":
+			return [
+				desc(companies.createdAt),
+				desc(companies.score),
+				asc(companies.id),
+			];
+		case "oldest":
+			return [
+				asc(companies.createdAt),
+				desc(companies.score),
+				asc(companies.id),
+			];
+		case "name_asc":
+			return [asc(companies.name), desc(companies.score), asc(companies.id)];
+		default:
+			return [
+				desc(companies.score),
+				desc(companies.createdAt),
+				asc(companies.id),
+			];
+	}
+}
+
+/** Query paginated companies for an organization along with matched contacts and thread summaries. */
 export async function findCompaniesWithContext(
 	organizationId: string,
 	filters: ListCompaniesFilters
 ) {
-	const conditions = [
+	const trimmedSignal = filters.signal?.trim();
+	const whereClause = withOrg(
+		companies,
+		organizationId,
+		filters.includeHidden ? undefined : eq(companies.hidden, false),
 		filters.tier ? eq(companies.tier, filters.tier) : undefined,
 		filters.status ? eq(companies.status, filters.status) : undefined,
 		filters.q
@@ -35,22 +81,47 @@ export async function findCompaniesWithContext(
 					ilike(companies.summary, `%${filters.q}%`)
 				)
 			: undefined,
-	];
+		trimmedSignal
+			? sql`EXISTS (SELECT 1 FROM unnest(${companies.signals}) AS sig WHERE sig ILIKE ${`%${trimmedSignal}%`})`
+			: undefined
+	);
 
-	let orderByClause = desc(companies.score);
-	if (filters.sort === "score_asc") {
-		orderByClause = asc(companies.score);
-	} else if (filters.sort === "recent") {
-		orderByClause = desc(companies.createdAt);
-	}
+	const limit = filters.limit ?? 50;
+	const offset = filters.offset ?? 0;
 
-	const [companyRows, orgContacts, orgThreads] = await Promise.all([
+	const [companyRows, [countRow]] = await Promise.all([
 		db
 			.select()
 			.from(companies)
-			.where(withOrg(companies, organizationId, ...conditions))
-			.orderBy(orderByClause),
-		db.select().from(contacts).where(withOrg(contacts, organizationId)),
+			.where(whereClause)
+			.orderBy(...resolveCompanyOrderBy(filters.sort))
+			.limit(limit)
+			.offset(offset),
+		db.select({ total: count() }).from(companies).where(whereClause),
+	]);
+
+	const pageCompanyIds = companyRows.map((company) => company.id);
+	if (pageCompanyIds.length === 0) {
+		return {
+			companies: [],
+			contacts: [],
+			threads: [],
+			total: Number(countRow?.total ?? 0),
+		};
+	}
+
+	const [pageContacts, pageThreads] = await Promise.all([
+		db
+			.select()
+			.from(contacts)
+			.where(
+				withOrg(
+					contacts,
+					organizationId,
+					inArray(contacts.companyId, pageCompanyIds)
+				)
+			)
+			.orderBy(asc(contacts.createdAt)),
 		db
 			.select({
 				companyId: threads.companyId,
@@ -58,13 +129,21 @@ export async function findCompaniesWithContext(
 				status: threads.status,
 			})
 			.from(threads)
-			.where(withOrg(threads, organizationId)),
+			.where(
+				withOrg(
+					threads,
+					organizationId,
+					inArray(threads.companyId, pageCompanyIds)
+				)
+			)
+			.orderBy(desc(threads.updatedAt)),
 	]);
 
 	return {
 		companies: companyRows,
-		contacts: orgContacts,
-		threads: orgThreads,
+		contacts: pageContacts,
+		threads: pageThreads,
+		total: Number(countRow?.total ?? 0),
 	};
 }
 
@@ -131,19 +210,20 @@ export async function findCompanyDossierRelations(
 			.from(contacts)
 			.where(
 				withOrg(contacts, organizationId, eq(contacts.companyId, companyId))
-			),
+			)
+			.orderBy(asc(contacts.createdAt)),
 		db
 			.select()
 			.from(threads)
-			.where(
-				withOrg(threads, organizationId, eq(threads.companyId, companyId))
-			),
+			.where(withOrg(threads, organizationId, eq(threads.companyId, companyId)))
+			.orderBy(desc(threads.updatedAt)),
 		db
 			.select()
 			.from(meetings)
 			.where(
 				withOrg(meetings, organizationId, eq(meetings.companyId, companyId))
-			),
+			)
+			.orderBy(desc(meetings.startAt)),
 		db
 			.select()
 			.from(agentRuns)
@@ -171,19 +251,34 @@ export async function createImportedCompany(input: {
 	organizationId: string;
 	website: string;
 }) {
-	const [created] = await db
-		.insert(companies)
-		.values({
-			domain: input.domain,
-			hqLocation: input.hqLocation ?? null,
-			name: input.name,
-			organizationId: input.organizationId,
-			status: "researching",
-			website: input.website,
-		})
-		.returning();
+	return await db.transaction(async (tx) => {
+		const [created] = await tx
+			.insert(companies)
+			.values({
+				domain: input.domain,
+				hqLocation: input.hqLocation ?? null,
+				name: input.name,
+				organizationId: input.organizationId,
+				status: "researching",
+				website: input.website,
+			})
+			.onConflictDoNothing({
+				target: [companies.organizationId, companies.domain],
+			})
+			.returning();
 
-	return created ?? null;
+		return created ?? null;
+	});
+}
+
+/** Delete an orphaned newly imported company if initial research queueing fails. */
+export async function deleteImportedCompanyOnQueueFailure(
+	organizationId: string,
+	companyId: string
+) {
+	await db
+		.delete(companies)
+		.where(withOrg(companies, organizationId, eq(companies.id, companyId)));
 }
 
 /** Update manual qualification overrides on a company record. */
@@ -192,6 +287,7 @@ export async function updateCompanyFields(
 	companyId: string,
 	patch: {
 		disqualifyReason?: string | null;
+		hidden?: boolean;
 		status?: CompanyStatus;
 		tier?: CompanyTier;
 	}
@@ -202,6 +298,7 @@ export async function updateCompanyFields(
 			...(patch.disqualifyReason === undefined
 				? {}
 				: { disqualifyReason: patch.disqualifyReason }),
+			...(patch.hidden === undefined ? {} : { hidden: patch.hidden }),
 			...(patch.status ? { status: patch.status } : {}),
 			...(patch.tier ? { tier: patch.tier } : {}),
 		})

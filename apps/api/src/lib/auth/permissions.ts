@@ -18,7 +18,7 @@ export const statements = {
 	billing: ["read", "manage"],
 	conversation: ["read", "reply", "takeover"],
 	document: ["create", "read", "update", "delete"],
-	lead: ["read", "update", "research"],
+	lead: ["read", "update", "research", "qualify"],
 	meeting: ["read"],
 	member: [...defaultStatements.member, "invite", "remove", "update_role"],
 	notification: ["read", "manage"],
@@ -41,7 +41,7 @@ export const roles = {
 		billing: ["read", "manage"],
 		conversation: ["read", "reply", "takeover"],
 		document: ["create", "read", "update", "delete"],
-		lead: ["read", "update", "research"],
+		lead: ["read", "update", "research", "qualify"],
 		meeting: ["read"],
 		member: [...ownerAc.statements.member, "invite", "remove", "update_role"],
 		notification: ["read", "manage"],
@@ -60,7 +60,7 @@ export const roles = {
 		billing: ["read"],
 		conversation: ["read", "reply", "takeover"],
 		document: ["create", "read", "update", "delete"],
-		lead: ["read", "update", "research"],
+		lead: ["read", "update", "research", "qualify"],
 		meeting: ["read"],
 		member: [...adminAc.statements.member, "invite", "remove"],
 		notification: ["read", "manage"],
@@ -75,7 +75,7 @@ export const roles = {
 		ai: ["read", "execute"],
 		conversation: ["read", "reply", "takeover"],
 		document: ["create", "read", "update"],
-		lead: ["read", "update", "research"],
+		lead: ["read", "update", "research", "qualify"],
 		meeting: ["read"],
 		notification: ["read"],
 		outreach: ["read", "approve"],
@@ -296,10 +296,18 @@ export const PERMISSION_MATRIX: readonly PermissionMatrixEntry[] = [
 		category: "AI & Agents",
 		description: "Discover, research, and qualify target prospect companies",
 		resource: "Research & Qualify Leads",
-		viewer: roleAllows("viewer", "lead", "research"),
-		member: roleAllows("member", "lead", "research"),
-		admin: roleAllows("admin", "lead", "research"),
-		owner: roleAllows("owner", "lead", "research"),
+		viewer:
+			roleAllows("viewer", "lead", "research") &&
+			roleAllows("viewer", "lead", "qualify"),
+		member:
+			roleAllows("member", "lead", "research") &&
+			roleAllows("member", "lead", "qualify"),
+		admin:
+			roleAllows("admin", "lead", "research") &&
+			roleAllows("admin", "lead", "qualify"),
+		owner:
+			roleAllows("owner", "lead", "research") &&
+			roleAllows("owner", "lead", "qualify"),
 	},
 	{
 		category: "AI & Agents",

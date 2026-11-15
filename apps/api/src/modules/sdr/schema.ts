@@ -1,4 +1,10 @@
 import {
+	DISCOVERY_NICHE_IDS,
+	isPublicHttpUrl,
+	sdrIcpSchema,
+	sdrPlaybookSchema,
+} from "@workspace/ai-core/contracts";
+import {
 	COMPANY_STATUSES,
 	COMPANY_TIERS,
 	SDR_AI_DISCLOSURE_MODES,
@@ -6,11 +12,28 @@ import {
 	THREAD_STATUSES,
 } from "@workspace/db/schema";
 import { z } from "zod";
+import { SDR_DISCOVERY_SIGNAL_PRESETS } from "../../lib/queues";
+
+export const COMPANY_SORT_OPTIONS = [
+	"score_desc",
+	"score_asc",
+	"recent",
+	"oldest",
+	"name_asc",
+] as const;
+
+export type CompanySortOption = (typeof COMPANY_SORT_OPTIONS)[number];
 
 export const listCompaniesQuerySchema = z.object({
+	includeHidden: z
+		.enum(["true", "false"])
+		.optional()
+		.transform((val) => val === "true"),
+	limit: z.coerce.number().int().min(1).max(100).default(50),
+	offset: z.coerce.number().int().min(0).default(0),
 	q: z.string().trim().max(120).optional(),
 	signal: z.string().trim().max(80).optional(),
-	sort: z.enum(["score_desc", "score_asc", "recent"]).default("score_desc"),
+	sort: z.enum(COMPANY_SORT_OPTIONS).default("score_desc"),
 	status: z.enum(COMPANY_STATUSES).optional(),
 	tier: z.enum(COMPANY_TIERS).optional(),
 });
@@ -27,19 +50,43 @@ export const threadIdParamSchema = z.object({
 	id: z.string().uuid(),
 });
 
-export const startResearchRunSchema = z.object({
-	queries: z.array(z.string().trim().min(3).max(200)).max(10).optional(),
-	targetCount: z.number().int().min(1).max(60).default(30),
-});
+export const startResearchRunSchema = z
+	.object({
+		keyword: z.string().trim().max(120).optional(),
+		limit: z.number().int().min(1).max(10).optional(),
+		niche: z.enum(DISCOVERY_NICHE_IDS).optional(),
+		queries: z.array(z.string().trim().min(3).max(200)).max(10).optional(),
+		signalPreset: z.enum(SDR_DISCOVERY_SIGNAL_PRESETS).optional(),
+		targetCount: z.number().int().min(1).max(60).optional(),
+	})
+	.refine(
+		(data) =>
+			!(
+				data.signalPreset &&
+				data.targetCount !== undefined &&
+				data.targetCount > 10
+			),
+		{
+			message: "Signal discovery batches are capped at 10 leads per run",
+			path: ["targetCount"],
+		}
+	);
 
 export const importCompanyUrlSchema = z.object({
 	hqLocation: z.string().trim().max(120).optional(),
 	name: z.string().trim().min(1).max(160).optional(),
-	website: z.string().trim().url(),
+	website: z
+		.string()
+		.trim()
+		.url()
+		.refine((url) => isPublicHttpUrl(url, { allowHttp: true }), {
+			message: "Website must be a valid public http or https URL",
+		}),
 });
 
 export const updateCompanySchema = z.object({
 	disqualifyReason: z.string().trim().max(500).nullable().optional(),
+	hidden: z.boolean().optional(),
 	status: z.enum(COMPANY_STATUSES).optional(),
 	tier: z.enum(COMPANY_TIERS).optional(),
 });
@@ -68,52 +115,14 @@ export const sendHumanReplySchema = z.object({
 
 export const simulateInboundReplySchema = z.object({
 	bodyText: z.string().trim().min(1).max(4000),
-	preset: z
-		.enum([
-			"pricing",
-			"bot_check",
-			"meeting_request",
-			"slot_pick",
-			"objection",
-			"opt_out",
-			"outside_playbook",
-			"custom",
-		])
-		.default("custom"),
 });
 
-export const sdrPlaybookFaqItemSchema = z.object({
-	answer: z.string().trim().min(2).max(1000),
-	question: z.string().trim().min(2).max(300),
-});
-
-export const sdrPlaybookObjectionItemSchema = z.object({
-	objection: z.string().trim().min(2).max(300),
-	responseGuidance: z.string().trim().min(2).max(1000),
-});
-
-export const sdrPlaybookSchema = z.object({
-	callToAction: z.string().trim().min(5).max(400),
-	companyDescription: z.string().trim().min(10).max(1000),
-	differentiators: z.array(z.string().trim().min(2).max(400)).min(1).max(12),
-	faq: z.array(sdrPlaybookFaqItemSchema).max(20),
-	forbiddenTopics: z.array(z.string().trim().min(2).max(400)).max(15),
-	idealCustomerSummary: z.string().trim().min(10).max(1000),
-	objectionHandling: z.array(sdrPlaybookObjectionItemSchema).max(20),
-	pricingPolicy: z.string().trim().min(10).max(600),
-	services: z.array(z.string().trim().min(2).max(400)).min(1).max(12),
-});
-
-export const sdrIcpSchema = z.object({
-	employeeMax: z.number().int().min(1).max(5000),
-	employeeMin: z.number().int().min(1).max(1000),
-	geography: z.string().trim().min(2).max(120),
-	revenueMaxUsd: z.number().int().min(100_000).max(1_000_000_000),
-	revenueMinUsd: z.number().int().min(0).max(100_000_000),
-	targetChannels: z.array(z.string().trim().min(1).max(80)).min(1).max(10),
-	targetPersonas: z.array(z.string().trim().min(1).max(120)).min(1).max(10),
-	timingSignals: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
-});
+export {
+	sdrIcpSchema,
+	sdrPlaybookFaqItemSchema,
+	sdrPlaybookObjectionItemSchema,
+	sdrPlaybookSchema,
+} from "@workspace/ai-core/contracts";
 
 export const updateSdrSettingsSchema = z.object({
 	aiDisclosure: z.enum(SDR_AI_DISCLOSURE_MODES).optional(),

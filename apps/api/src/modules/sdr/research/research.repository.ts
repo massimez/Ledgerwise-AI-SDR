@@ -9,23 +9,60 @@ import {
 	researchRuns,
 	threads,
 } from "@workspace/db/schema";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { withOrg } from "../../../lib/tenant";
 
-/** Fetch dashboard KPI source tables and recent activity for an organization. */
+/** Fetch dashboard KPI SQL aggregates alongside capped recent lists for an organization. */
 export async function findDashboardDataset(organizationId: string) {
 	const [
-		allCompanies,
+		[companyKpiRow],
+		[runKpiRow],
+		[bookedKpiRow],
+		[pendingReviewKpiRow],
+		[needsHumanKpiRow],
 		pendingReviews,
-		allThreads,
+		needsHumanThreads,
 		upcomingMeetings,
 		recentActivity,
 	] = await Promise.all([
 		db
-			.select()
+			.select({
+				contactedCount: sql<number>`coalesce(sum(case when ${companies.status} in ('contacted', 'replied', 'meeting_booked', 'suppressed') then 1 else 0 end), 0)`,
+				qualifiedCount: sql<number>`coalesce(sum(case when ${companies.tier} in ('A', 'B') then 1 else 0 end), 0)`,
+				repliedCount: sql<number>`coalesce(sum(case when ${companies.status} in ('replied', 'meeting_booked') then 1 else 0 end), 0)`,
+				researchedCount: count(),
+			})
 			.from(companies)
-			.where(withOrg(companies, organizationId))
-			.orderBy(desc(companies.score)),
+			.where(withOrg(companies, organizationId)),
+		db
+			.select({
+				exaSuggestedCount: sql<number>`coalesce(sum(${researchRuns.exaSuggestedCount}), 0)`,
+				preFilteredCount: sql<number>`coalesce(sum(${researchRuns.preFilteredCount}), 0)`,
+			})
+			.from(researchRuns)
+			.where(withOrg(researchRuns, organizationId)),
+		db
+			.select({ total: count() })
+			.from(meetings)
+			.where(
+				withOrg(
+					meetings,
+					organizationId,
+					inArray(meetings.status, ["scheduled", "completed"])
+				)
+			),
+		db
+			.select({ total: count() })
+			.from(messages)
+			.where(
+				withOrg(messages, organizationId, eq(messages.status, "pending_review"))
+			),
+		db
+			.select({ total: count() })
+			.from(threads)
+			.where(
+				withOrg(threads, organizationId, eq(threads.status, "needs_human"))
+			),
 		db
 			.select({
 				companyId: threads.companyId,
@@ -64,8 +101,11 @@ export async function findDashboardDataset(organizationId: string) {
 			.from(threads)
 			.innerJoin(companies, eq(threads.companyId, companies.id))
 			.leftJoin(contacts, eq(threads.contactId, contacts.id))
-			.where(withOrg(threads, organizationId))
-			.orderBy(desc(threads.lastMessageAt)),
+			.where(
+				withOrg(threads, organizationId, eq(threads.status, "needs_human"))
+			)
+			.orderBy(desc(threads.lastMessageAt))
+			.limit(20),
 		db
 			.select({
 				attendeeEmail: meetings.attendeeEmail,
@@ -104,16 +144,56 @@ export async function findDashboardDataset(organizationId: string) {
 			.leftJoin(companies, eq(agentRuns.companyId, companies.id))
 			.where(withOrg(agentRuns, organizationId))
 			.orderBy(desc(agentRuns.createdAt))
-			.limit(12),
+			.limit(20),
 	]);
 
+	const preFilteredCount = Number(runKpiRow?.preFilteredCount ?? 0);
+	const researchedCount = Number(companyKpiRow?.researchedCount ?? 0);
+	const exaSuggestedCount = Math.max(
+		Number(runKpiRow?.exaSuggestedCount ?? 0),
+		researchedCount + preFilteredCount
+	);
+
 	return {
-		allCompanies,
-		allThreads,
+		kpis: {
+			bookedCount: Number(bookedKpiRow?.total ?? 0),
+			contactedCount: Number(companyKpiRow?.contactedCount ?? 0),
+			exaSuggestedCount,
+			needsHumanCount: Number(needsHumanKpiRow?.total ?? 0),
+			pendingReviewCount: Number(pendingReviewKpiRow?.total ?? 0),
+			preFilteredCount,
+			qualifiedCount: Number(companyKpiRow?.qualifiedCount ?? 0),
+			repliedCount: Number(companyKpiRow?.repliedCount ?? 0),
+			researchedCount,
+		},
+		needsHumanThreads,
 		pendingReviews,
 		recentActivity,
 		upcomingMeetings,
 	};
+}
+
+/** Transition orphaned `queued` or `running` runs older than `maxAgeMs` to `failed`. */
+export async function failStaleResearchRuns(
+	organizationId: string,
+	maxAgeMs = 5 * 60 * 1000
+) {
+	const cutoff = new Date(Date.now() - maxAgeMs);
+	await db
+		.update(researchRuns)
+		.set({
+			completedAt: new Date(),
+			error:
+				"Discovery run timed out after 5 minutes without worker progress. Please retry.",
+			status: "failed",
+		})
+		.where(
+			and(
+				withOrg(researchRuns, organizationId),
+				inArray(researchRuns.status, ["queued", "running"]),
+				lt(researchRuns.updatedAt, cutoff)
+			)
+		);
 }
 
 /** List recent discovery research runs for an organization. */

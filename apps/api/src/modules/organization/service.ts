@@ -52,7 +52,8 @@ export async function transferOwnership(params: {
 			.select()
 			.from(member)
 			.where(and(orgPredicate, eq(member.userId, currentOwnerUserId)))
-			.limit(1);
+			.limit(1)
+			.for("update");
 
 		if (
 			!(currentMember && parseMemberRoles(currentMember.role).includes("owner"))
@@ -66,7 +67,8 @@ export async function transferOwnership(params: {
 			.select()
 			.from(member)
 			.where(and(orgPredicate, eq(member.userId, newOwnerUserId)))
-			.limit(1);
+			.limit(1)
+			.for("update");
 
 		if (!targetMember) {
 			throw new NotFoundError("Target organization member", "newOwnerUserId");

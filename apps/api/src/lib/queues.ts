@@ -1,3 +1,7 @@
+import {
+	DISCOVERY_NICHE_IDS,
+	isSafeHttpUrl,
+} from "@workspace/ai-core/contracts";
 import { z } from "zod";
 
 export const EMAIL_QUEUE_NAME = "email-queue";
@@ -27,14 +31,7 @@ export const notificationChannelSchema = z.enum(NOTIFICATION_CHANNELS);
 const httpUrlSchema = z
 	.string()
 	.url()
-	.refine((value) => {
-		try {
-			const parsed = new URL(value);
-			return parsed.protocol === "http:" || parsed.protocol === "https:";
-		} catch {
-			return false;
-		}
-	}, "URL must use http or https protocol");
+	.refine(isSafeHttpUrl, "URL must use http or https protocol");
 
 export const verificationOtpEmailSchema = z.object({
 	payload: z.object({
@@ -110,10 +107,23 @@ export const notificationJobDataSchema = z.object({
 
 export type NotificationJobData = z.infer<typeof notificationJobDataSchema>;
 
+export const SDR_DISCOVERY_SIGNAL_PRESETS = [
+	"hiring_finance_ops",
+	"recent_funding",
+	"channel_expansion",
+] as const;
+
+export type SdrDiscoverySignalPreset =
+	(typeof SDR_DISCOVERY_SIGNAL_PRESETS)[number];
+
 export const sdrDiscoverBatchJobSchema = z.object({
 	action: z.literal("discover-batch"),
+	keyword: z.string().trim().max(120).optional(),
+	niche: z.enum(DISCOVERY_NICHE_IDS).optional(),
 	organizationId: z.string().trim().min(1),
+	queries: z.array(z.string().trim().min(1).max(240)).max(10).optional(),
 	researchRunId: z.string().uuid(),
+	signalPreset: z.enum(SDR_DISCOVERY_SIGNAL_PRESETS).optional(),
 	startedByUserId: z.string().trim().min(1).optional(),
 	targetCount: z.number().int().min(1).max(60).default(30),
 });

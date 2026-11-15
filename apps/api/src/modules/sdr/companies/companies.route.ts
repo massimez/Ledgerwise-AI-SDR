@@ -28,8 +28,8 @@ export const companiesRoutes = createRouter()
 		async (c) => {
 			const { organizationId } = getActiveOrgContext(c);
 			const query = c.req.valid("query");
-			const items = await listCompanies(organizationId, query);
-			return c.json(createSuccessResponse({ companies: items }));
+			const result = await listCompanies(organizationId, query);
+			return c.json(createSuccessResponse(result));
 		}
 	)
 	.post(

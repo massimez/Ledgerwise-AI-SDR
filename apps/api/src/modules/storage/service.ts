@@ -595,39 +595,21 @@ export async function deleteUpload(params: {
 		throw new ValidationError("Upload identifier is required");
 	}
 
-	return await db.transaction(async (tx) => {
-		const [existing] = await tx
+	const existing = await db.transaction(async (tx) => {
+		const [row] = await tx
 			.select()
 			.from(uploads)
 			.where(filter)
 			.for("update")
 			.limit(1);
 
-		if (!existing) {
+		if (!row) {
 			throw new NotFoundError("File not found or unauthorized");
-		}
-
-		try {
-			await deleteS3Object({
-				bucket: existing.bucket,
-				fileKey: existing.fileKey,
-			});
-		} catch (error) {
-			if (!isS3NotFoundError(error)) {
-				logError("deleteUpload:S3Delete", error, {
-					fileKey: existing.fileKey,
-				});
-				throw new AppError("Failed to delete file from object storage", {
-					cause: error,
-					code: "STORAGE_DELETE_FAILED",
-					statusCode: 502,
-				});
-			}
 		}
 
 		const [deleted] = await tx
 			.delete(uploads)
-			.where(withOrg(uploads, organizationId, eq(uploads.id, existing.id)))
+			.where(withOrg(uploads, organizationId, eq(uploads.id, row.id)))
 			.returning();
 
 		if (deleted?.size && deleted.status === "committed") {
@@ -640,12 +622,28 @@ export async function deleteUpload(params: {
 				.where(eq(organizationStorageLimits.organizationId, organizationId));
 		}
 
-		return {
-			fileKey: existing.fileKey,
-			id: existing.id,
-			success: true,
-		};
+		return row;
 	});
+
+	try {
+		await deleteS3Object({
+			bucket: existing.bucket,
+			fileKey: existing.fileKey,
+		});
+	} catch (error) {
+		if (!isS3NotFoundError(error)) {
+			logError("deleteUpload:S3Delete", error, {
+				fileKey: existing.fileKey,
+				id: existing.id,
+			});
+		}
+	}
+
+	return {
+		fileKey: existing.fileKey,
+		id: existing.id,
+		success: true,
+	};
 }
 
 export async function getStorageUsage(organizationId: string) {

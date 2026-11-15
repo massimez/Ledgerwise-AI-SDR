@@ -36,7 +36,10 @@ export async function enqueueSdrPipelineJob(
 	options?: JobsOptions
 ) {
 	const validated = sdrPipelineJobDataSchema.parse(data);
-	return await sdrPipelineQueue.add(validated.action, validated, options);
+	return await sdrPipelineQueue.add(validated.action, validated, {
+		backoff: { delay: 15_000, type: "exponential" },
+		...options,
+	});
 }
 
 export async function enqueueSdrOutboundJob(
@@ -45,7 +48,7 @@ export async function enqueueSdrOutboundJob(
 ) {
 	const validated = sdrOutboundJobDataSchema.parse(data);
 	return await sdrOutboundQueue.add("send-outbound", validated, {
-		jobId: `outbound:${validated.messageId}`,
+		jobId: `outbound-${validated.messageId}`,
 		...options,
 	});
 }
@@ -56,7 +59,7 @@ export async function enqueueSdrInboundJob(
 ) {
 	const validated = sdrInboundJobDataSchema.parse(data);
 	return await sdrInboundQueue.add("process-inbound", validated, {
-		jobId: `inbound:${validated.inboundMessageId}`,
+		jobId: `inbound-${validated.inboundMessageId}`,
 		...options,
 	});
 }

@@ -7,6 +7,7 @@ import {
 } from "../../../lib/create-hono-app";
 import { getActiveOrgContext } from "../../../lib/tenant";
 import { hasOrgPermission } from "../../../middleware/org-permission";
+import { rateLimiter } from "../../../middleware/rate-limiter";
 import {
 	listThreadsQuerySchema,
 	sendHumanReplySchema,
@@ -96,6 +97,10 @@ export const threadsRoutes = createRouter()
 	.post(
 		"/:id/simulate-inbound",
 		hasOrgPermission("conversation:reply"),
+		rateLimiter(60_000, 15, {
+			identity: "actor",
+			operation: "sdr:simulate-inbound",
+		}),
 		paramValidator(threadIdParamSchema),
 		jsonValidator(simulateInboundReplySchema),
 		async (c) => {
@@ -105,7 +110,6 @@ export const threadsRoutes = createRouter()
 			const result = await simulateInboundReply({
 				bodyText: input.bodyText,
 				organizationId,
-				preset: input.preset,
 				threadId: id,
 			});
 			return c.json(createSuccessResponse(result), 202);

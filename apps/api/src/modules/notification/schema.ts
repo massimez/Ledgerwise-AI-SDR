@@ -1,10 +1,11 @@
+import { isPublicHttpUrl } from "@workspace/ai-core/contracts";
 import { z } from "zod";
 import {
 	notificationCategorySchema,
 	notificationChannelSchema,
 } from "../../lib/queues";
 
-const HTTP_URL_REGEX = /^https?:\/\//iu;
+const isProdEnv = process.env.NODE_ENV === "production";
 
 export const notificationIdParamSchema = z.object({
 	id: z.string().uuid("Invalid notification ID"),
@@ -27,9 +28,16 @@ export const pushSubscriptionSchema = z.object({
 		.string()
 		.url()
 		.max(2048)
-		.refine((val) => HTTP_URL_REGEX.test(val), {
-			message: "Push endpoint must use http or https",
-		}),
+		.refine(
+			(val) =>
+				isPublicHttpUrl(val, {
+					allowHttp: false,
+					allowLocalDev: !isProdEnv,
+				}),
+			{
+				message: "Push endpoint must be a public https URL",
+			}
+		),
 	keys: z.object({
 		auth: z.string().min(1),
 		p256dh: z.string().min(1),

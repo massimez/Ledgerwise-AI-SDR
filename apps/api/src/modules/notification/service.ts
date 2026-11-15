@@ -1,3 +1,4 @@
+import { assertPublicHttpUrl, SsrfBlockedError } from "@workspace/ai-core";
 import { db } from "@workspace/db";
 import {
 	member,
@@ -7,6 +8,7 @@ import {
 } from "@workspace/db/schema";
 import { and, count, desc, eq } from "drizzle-orm";
 import { isOrgAdminRole } from "../../lib/auth/permissions";
+import { ValidationError } from "../../lib/errors";
 import {
 	NOTIFICATION_CATEGORIES,
 	NOTIFICATION_CHANNELS,
@@ -133,6 +135,16 @@ export const notificationService = {
 	},
 
 	async savePushSubscription(userId: string, input: PushSubscriptionInput) {
+		try {
+			await assertPublicHttpUrl(input.endpoint, { allowHttp: false });
+		} catch (error) {
+			throw new ValidationError(
+				error instanceof SsrfBlockedError || error instanceof Error
+					? error.message
+					: "Invalid or restricted push subscription endpoint",
+				{ cause: error, field: "endpoint" }
+			);
+		}
 		const now = new Date();
 		const [sub] = await db
 			.insert(pushSubscription)
