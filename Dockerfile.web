@@ -10,6 +10,7 @@ FROM base AS builder
 COPY --from=pruner /app/out/json/ ./
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY --from=pruner /app/out/full/ ./
+COPY --from=pruner /app/tsconfig.json ./tsconfig.json
 
 ARG INTERNAL_API_URL=http://api:3001
 ARG NEXT_PUBLIC_API_URL=

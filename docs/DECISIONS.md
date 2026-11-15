@@ -246,3 +246,8 @@ This log tracks every architectural, product, and tooling decision made during t
 - **Context:** Docker Compose schema validation in Dokploy rejected `docker-compose.prod.yml` with `services.redis.healthcheck additional properties 'environment' not allowed`.
 - **Fix:** Moved `REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}` from `services.redis.healthcheck.environment` to `services.redis.environment` in `docker-compose.prod.yml` so `CMD-SHELL` (`REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping`) still receives the variable while matching the Compose specification.
 - **Why:** Compose v2 does not permit an `environment` key inside `healthcheck`; defining it on the `redis` service itself resolves schema validation failures during Dokploy deployment.
+
+### D35. Copy root `tsconfig.json` into `Dockerfile.web` builder stage
+- **Context:** `Dockerfile.web` failed during `bun x turbo build --filter=@workspace/web` with `extends: "../../tsconfig.json" doesn't resolve correctly` in `apps/web/tsconfig.json` because `turbo prune @workspace/web --docker` omits the repository root `tsconfig.json` from `/app/out/full/`.
+- **Fix:** Added `COPY --from=pruner /app/tsconfig.json ./tsconfig.json` in `Dockerfile.web` alongside `COPY --from=pruner /app/out/full/ ./`.
+- **Why:** `apps/web/tsconfig.json` and workspace packages extend `../../tsconfig.json`, so Next.js/Turbopack requires the root config file in `/app` during image builds.
