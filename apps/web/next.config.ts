@@ -121,7 +121,8 @@ const nextConfig: NextConfig = {
 			},
 			{
 				key: "Permissions-Policy",
-				value: "camera=(), microphone=(), geolocation=()",
+				// Allow self (and explicitly delegated extension iframes such as Loom) to request camera/microphone.
+				value: "camera=(self), microphone=(self), geolocation=()",
 			},
 			{
 				key: "Referrer-Policy",
