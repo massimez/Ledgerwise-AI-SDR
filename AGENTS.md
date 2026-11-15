@@ -55,3 +55,14 @@ Always enforce these domain rules in both deterministic code and agent prompts (
    - Private US e-commerce brands that pass the US + e-commerce gates with no enterprise disqualifier score `10/15` for `unknown` revenue and `10/15` for `unknown` employee count.
    - First emails must be conversational, plain text, `< 100` words, with zero links, zero prices, and no physical mailing address footer.
 
+## Decisions & Eval Logging Rule
+
+At the end of every task, automatically append a sequential `### D<n>. ...` entry (grouped under a `## YYYY-MM-DD — ...` heading) to `docs/DECISIONS.md` whenever any of the following occurs:
+
+1. **Plan Change**: Implementation diverges from `docs/specs/2026-11-13-ledgerwise-sdr-design.md` or an earlier decision.
+2. **Dropped / Replaced Tool or Abstraction**: A framework primitive, library, integration, or abstraction is dropped, replaced, or deferred.
+3. **User-Reported Mistake**: The user points out a bug, wrong assumption, or correction.
+4. **Eval Metrics Recorded**: An evaluation suite (`bun run eval:replies`, `bun run eval:booking`, or similar benchmark) is run and produces new or updated metrics.
+
+Each entry must include **Context**, **Decision** (or **Fix** / **Results**), and **Why**, citing only verified file paths, symbol names, and observed numbers.
+

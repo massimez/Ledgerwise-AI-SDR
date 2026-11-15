@@ -3,7 +3,7 @@
 - **Mode:** `deterministic`
 - **Total Cases:** 50
 - **Overall Gate Status:** PASS
-- **Average Latency / Case:** 10.5 ms
+- **Average Latency / Case:** 11.4 ms
 
 ## Target Gates (Spec Section 11 — E3)
 

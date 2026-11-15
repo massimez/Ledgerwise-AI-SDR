@@ -130,7 +130,8 @@ bun run dev
 |---|---|
 | `bun run setup` | Initialize project name, APP_CONFIG branding, and `.env` secrets |
 | `bun run dev` | Start Web, API, and Worker via Turborepo |
-| `bun run dev:ai` | Launch Mastra Studio (`mastra dev`) for `@workspace/ai-core` |
+| `bun run dev:ai` | Launch Mastra Studio (`mastra dev` on port `4111`) for `@workspace/ai-core` via Turborepo |
+| `bun run mastra:studio` | Launch Mastra Studio directly on port `4111` (`./scripts/mastra-studio.sh`) |
 | `bun run dev:web` | Start only the Next.js frontend |
 | `bun run dev:api` | Start only the Hono backend |
 | `bun run dev:worker` | Start the BullMQ background worker service |
@@ -153,7 +154,7 @@ The Mastra workspace (`packages/ai-core`) uses Mastra's `provider/model` router 
 
 | Provider | Example `MASTRA_DEFAULT_MODEL` | API Key Env Var(s) | Embeddings (`MASTRA_EMBEDDING_MODEL`) |
 |---|---|---|---|
-| **Google Gemini** *(default)* | `google/gemini-2.5-flash` | `GOOGLE_GENERATIVE_AI_API_KEY` *(or `GOOGLE_API_KEY`)* | `google/gemini-embedding-001` |
+| **Google Gemini** *(default)* | `google/gemini-3.5-flash` | `GOOGLE_GENERATIVE_AI_API_KEY` *(or `GOOGLE_API_KEY`)* | `google/gemini-embedding-001` |
 | **OpenAI** | `openai/gpt-5-mini` | `OPENAI_API_KEY` | `openai/text-embedding-3-small`, `openai/text-embedding-3-large` |
 | **Anthropic** | `anthropic/claude-sonnet-4-5` | `ANTHROPIC_API_KEY` | Use a `google/*` or `openai/*` embedder *(or omit for thread-only memory)* |
 | **OpenRouter** | `openrouter/anthropic/claude-sonnet-4.5` | `OPENROUTER_API_KEY` | Use a `google/*` or `openai/*` embedder *(or omit for thread-only memory)* |
