@@ -54,7 +54,7 @@ export function HeaderAuth() {
 			<ThemeToggle />
 			<Button
 				className="gap-1.5"
-				onClick={() => openSignIn()}
+				onClick={() => openSignIn("/dashboard")}
 				size="sm"
 				type="button"
 				variant="ghost"
@@ -64,7 +64,7 @@ export function HeaderAuth() {
 			</Button>
 			<Button
 				className="hidden sm:inline-flex"
-				onClick={() => openSignUp()}
+				onClick={() => openSignUp("/dashboard")}
 				size="sm"
 				type="button"
 				variant="primary"

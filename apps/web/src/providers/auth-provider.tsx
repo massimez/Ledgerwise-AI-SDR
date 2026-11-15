@@ -2,17 +2,19 @@
 
 import { AuthModalProvider } from "@workspace/ui/components/auth/auth-modal-provider";
 import { sanitizeInternalRedirect } from "@workspace/ui/lib/utils";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
 	createContext,
+	Suspense,
 	useCallback,
 	useContext,
+	useEffect,
 	useMemo,
 	useState,
 } from "react";
 import { toast } from "sonner";
 import { publicWebEnv } from "@/env";
-import { authClient } from "@/lib/auth-client";
+import { authClient, useSession } from "@/lib/auth-client";
 
 interface AuthOpenOptions {
 	onSuccess?: () => Promise<void> | void;
@@ -40,6 +42,61 @@ const normalizeAuthOptions = (
 		socialRedirectTo: sanitizeInternalRedirect(options?.socialRedirectTo),
 	};
 };
+
+function AuthQuerySync({
+	openSignIn,
+	openSignUp,
+}: {
+	openSignIn: (options?: AuthOpenOptions | string) => void;
+	openSignUp: (options?: AuthOpenOptions | string) => void;
+}) {
+	const searchParams = useSearchParams();
+	const pathname = usePathname();
+	const router = useRouter();
+	const { data: session, isPending } = useSession();
+
+	useEffect(() => {
+		const authParam = searchParams.get("auth");
+		if (authParam !== "signin" && authParam !== "signup") {
+			return;
+		}
+		if (isPending) {
+			return;
+		}
+
+		const target =
+			sanitizeInternalRedirect(searchParams.get("callbackUrl")) ?? "/dashboard";
+
+		if (session?.user) {
+			router.replace(target);
+			return;
+		}
+
+		if (authParam === "signup") {
+			openSignUp({ redirectTo: target });
+		} else {
+			openSignIn({ redirectTo: target });
+		}
+
+		const nextParams = new URLSearchParams(searchParams.toString());
+		nextParams.delete("auth");
+		nextParams.delete("callbackUrl");
+		const query = nextParams.toString();
+		router.replace(query ? `${pathname}?${query}` : pathname, {
+			scroll: false,
+		});
+	}, [
+		isPending,
+		openSignIn,
+		openSignUp,
+		pathname,
+		router,
+		searchParams,
+		session?.user,
+	]);
+
+	return null;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [isOpen, setIsOpen] = useState(false);
@@ -80,12 +137,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		if (successHandler) {
 			await successHandler();
 			setSuccessHandler(undefined);
+			if (redirectTo) {
+				router.push(redirectTo);
+			}
+			return;
 		}
-		if (redirectTo) {
-			router.push(redirectTo);
-		} else {
-			router.refresh();
-		}
+		router.push(redirectTo ?? "/dashboard");
 	}, [redirectTo, router, successHandler]);
 
 	const value = useMemo(
@@ -99,6 +156,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 	return (
 		<AuthContext.Provider value={value}>
+			<Suspense fallback={null}>
+				<AuthQuerySync openSignIn={openSignIn} openSignUp={openSignUp} />
+			</Suspense>
 			{children}
 			<AuthModalProvider
 				authClient={authClient}
