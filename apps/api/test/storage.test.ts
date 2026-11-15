@@ -241,6 +241,49 @@ describe("storage service controls and route guards", () => {
 		});
 	});
 
+	test("deleteUpload commits DB transaction before attempting S3 object removal and tolerates post-commit S3 failure", async () => {
+		const committedRow = {
+			bucket: "starter-uploads",
+			fileKey: "org_1/uploads/post-commit.pdf",
+			id: "22222222-2222-4222-8222-222222222222",
+			metadata: { storageMode: "s3" },
+			organizationId: "org_1",
+			size: 2048,
+			status: "committed",
+		};
+		const events: string[] = [];
+
+		spyOn(S3Client.prototype, "send").mockImplementation((() => {
+			events.push("s3:delete");
+			return Promise.reject(new Error("S3 transient failure"));
+		}) as never);
+
+		spyOn(db, "transaction").mockImplementation((async (
+			callback: (tx: unknown) => Promise<unknown>
+		) => {
+			const txMock = {
+				delete: () => createQueryChain([committedRow]),
+				select: () => createQueryChain([committedRow]),
+				update: () => createQueryChain(undefined),
+			};
+			const out = await callback(txMock);
+			events.push("tx:committed");
+			return out;
+		}) as never);
+
+		const res = await deleteUpload({
+			id: committedRow.id,
+			organizationId: "org_1",
+		});
+
+		expect(events).toEqual(["tx:committed", "s3:delete"]);
+		expect(res).toEqual({
+			fileKey: committedRow.fileKey,
+			id: committedRow.id,
+			success: true,
+		});
+	});
+
 	test("presignUpload throws STORAGE_UNAVAILABLE when S3 credentials are missing", async () => {
 		let callIndex = 0;
 		spyOn(db, "select").mockImplementation((() => {

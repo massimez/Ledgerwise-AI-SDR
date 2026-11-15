@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { OfferedSlot, SdrPlaybookConfig } from "@workspace/db/schema/sdr";
+import type { OfferedSlot } from "@workspace/db/schema/sdr";
+import { DEFAULT_LEDGERWISE_PLAYBOOK } from "@workspace/db/sdr-defaults";
 import {
 	detectOutboundPriceViolation,
 	verifyBotDisclosure,
@@ -52,62 +53,6 @@ export interface EvalSummary {
 	priceLeakCount: number;
 	totalCases: number;
 }
-
-const EVAL_PLAYBOOK: SdrPlaybookConfig = {
-	callToAction:
-		"Worth a quick 15-minute intro call next week to walk through how we handle multi-channel ecommerce closes?",
-	companyDescription:
-		"Ledgerwise is a specialized US outsourced bookkeeping and ecommerce accounting firm that runs monthly accrual closes for DTC and omnichannel consumer brands.",
-	differentiators: [
-		"Dedicated US ecommerce accounting pod rather than generalist bookkeepers or black-box software",
-		"True gross-to-net payout clearing so marketplace fees, chargebacks, and deferred gift cards never distort revenue",
-		"Seamless collaboration with your existing tax CPA at year-end with zero cleanup fees",
-	],
-	faq: [
-		{
-			answer:
-				"We reconcile every settlement batch from Shopify Payments and Amazon Seller Central against gross orders, FBA fees, ad spend deductions, refunds, and reserve holds so your QuickBooks or Xero ledger matches your bank deposits to the cent.",
-			question: "How do you handle both Shopify and Amazon Seller Central?",
-		},
-		{
-			answer:
-				"Onboarding takes about two weeks. We connect read-only to your storefronts, payment processors, and 3PL, clean up historical clearing and inventory accounts, and deliver your first full accrual close by the 10th business day.",
-			question: "How long does onboarding take?",
-		},
-		{
-			answer:
-				"No—we handle the day-to-day ecommerce accrual bookkeeping, COGS, and channel margin reporting, and hand your tax CPA a clean, reconciled trial balance at year-end.",
-			question: "Do you replace our tax CPA?",
-		},
-	],
-	forbiddenTopics: [
-		"Never quote dollar prices, monthly retainers, or fee ranges",
-		"Never provide formal tax filing or legal advice",
-		"Never invent customer case studies or claim facts about a prospect not backed by verified evidence",
-	],
-	idealCustomerSummary:
-		"US e-commerce brands selling on Shopify, Amazon Seller Central, or their own storefront with roughly $1M–$10M in annual revenue and 5–50 employees.",
-	objectionHandling: [
-		{
-			objection: "We already have a local bookkeeper or CPA",
-			responseGuidance:
-				"Acknowledge that a good tax CPA is essential, and note that generalist bookkeepers often record net bank deposits as revenue instead of breaking out marketplace fees, reserves, and landed COGS by channel. Offer a quick comparison call.",
-		},
-		{
-			objection: "We use Bench / Pilot / automated software",
-			responseGuidance:
-				"Highlight that generic bookkeeping platforms struggle with multi-channel inventory, 3PL syncs, and Amazon reserve timing when brands expand into wholesale or new marketplaces.",
-		},
-	],
-	pricingPolicy:
-		"Never quote a price, monthly fee, or dollar range over email. Explain that pricing depends on monthly order volume, active sales channels, and inventory/3PL complexity, and offer a 15-minute intro call to scope it accurately.",
-	services: [
-		"Monthly accrual-basis bookkeeping closed by the 10th business day of every month",
-		"Automated payout, fee, refund, and reserve reconciliation across Shopify, Amazon Seller Central, Stripe, PayPal, Affirm, and Faire",
-		"SKU-level landed COGS, 3PL inventory valuation (ShipBob, Red Stag, Deliverr), and channel gross-margin reporting",
-		"Multi-state sales tax nexus monitoring and audit-ready financial packages for investors and inventory lenders",
-	],
-};
 
 const SAMPLE_OFFERED_SLOTS: OfferedSlot[] = [
 	{
@@ -224,6 +169,7 @@ function formatEvalMarkdownReport(summary: EvalSummary): string {
 /** Run the E3 50-case golden-set evaluation against `runInboundReplyPipeline`. */
 export async function evaluateGoldenReplySet(options?: {
 	goldenSetPath?: string;
+	googleApiKey?: string;
 	openrouterApiKey?: string;
 	writeReportPath?: string;
 }): Promise<EvalSummary> {
@@ -232,7 +178,7 @@ export async function evaluateGoldenReplySet(options?: {
 		resolve(import.meta.dir, "replies-golden-set.json");
 	const raw = readFileSync(goldenSetPath, "utf8");
 	const cases = JSON.parse(raw) as GoldenReplyCase[];
-	const useLlm = Boolean(options?.openrouterApiKey);
+	const useLlm = Boolean(options?.openrouterApiKey || options?.googleApiKey);
 
 	const outcomes = await Promise.all(
 		cases.map(async (item): Promise<EvalCaseOutcome> => {
@@ -246,9 +192,10 @@ export async function evaluateGoldenReplySet(options?: {
 				companyName: "Suncrest Botanics",
 				contactEmail: "maya@suncrestbotanics.demo",
 				contactName: "Maya Chen",
+				googleApiKey: options?.googleApiKey ?? "",
 				inboundBody: item.inboundBody,
 				openrouterApiKey: options?.openrouterApiKey ?? "",
-				playbook: EVAL_PLAYBOOK,
+				playbook: DEFAULT_LEDGERWISE_PLAYBOOK,
 				previousOfferedSlots: item.useOfferedSlots ? SAMPLE_OFFERED_SLOTS : [],
 				prospectTimezone: "America/New_York",
 				subject: "Quick question on Suncrest Botanics Shopify payout clearing",

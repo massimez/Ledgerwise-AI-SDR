@@ -16,10 +16,12 @@ import {
 const VALID_PROD_ENV: Record<string, string> = {
 	BETTER_AUTH_SECRET: "production_secret_with_at_least_32_characters_total",
 	BETTER_AUTH_URL: "https://api.example.com",
+	CALCOM_WEBHOOK_SECRET: "cal_prod_secret_123456",
 	CORS_ORIGIN: "https://app.example.com, https://admin.example.com",
 	DATABASE_URL: "postgresql://user:pass@db.internal:5432/app",
 	NODE_ENV: "production",
 	REDIS_URL: "redis://redis.internal:6379/1",
+	RESEND_WEBHOOK_SECRET: "whsec_cHJvZF9zZWNyZXRfMTIzNDU2",
 	S3_ACCESS_KEY_ID: "prod-access-key",
 	S3_SECRET_ACCESS_KEY: "prod-secret-key",
 	TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 172.16.0.1",

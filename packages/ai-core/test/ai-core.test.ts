@@ -103,7 +103,7 @@ describe("@workspace/ai-core contracts", () => {
 	});
 
 	test("resolves provider metadata, API keys, and embedding options for Google, OpenAI, Anthropic, and OpenRouter", () => {
-		expect(getAiProviderInfo("google/gemini-2.5-flash")).toEqual({
+		expect(getAiProviderInfo("google/gemini-3.5-flash")).toEqual({
 			apiKeyEnvVars: ["GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"],
 			id: "google",
 			label: "Google Gemini",
@@ -406,7 +406,27 @@ describe("guardrails, working memory, and createMastraRuntime", () => {
 		expect(runtime.vector).toBeUndefined();
 		expect(runtime.memory).toBeUndefined();
 		expect(runtime.agents[DEFAULT_AI_AGENT_ID]).toBeDefined();
+		expect(Object.keys(runtime.agents)).toEqual([DEFAULT_AI_AGENT_ID]);
 		expect(runtime.mastra.getWorkflowById("workspace-brief")).toBeDefined();
+
+		await expect(runtime.close()).resolves.toBeUndefined();
+	});
+
+	test("registers the 5 SDR agents only when includeSdrAgents is enabled", async () => {
+		const runtime = createMastraRuntime({ includeSdrAgents: true });
+		const expectedSdrAgentIds = [
+			"sdr-fact-check-judge",
+			"sdr-first-email-writer",
+			"sdr-reply-classifier",
+			"sdr-reply-generator",
+			"sdr-research-extractor",
+		];
+
+		expect(runtime.agents[DEFAULT_AI_AGENT_ID]).toBeDefined();
+		for (const agentId of expectedSdrAgentIds) {
+			expect(runtime.agents[agentId]).toBeDefined();
+			expect(runtime.mastra.getAgentById(agentId)).toBeDefined();
+		}
 
 		await expect(runtime.close()).resolves.toBeUndefined();
 	});

@@ -84,6 +84,8 @@ describe("@workspace/ui error extraction and auth translations", () => {
 			"/dashboard?tab=billing"
 		);
 		expect(sanitizeInternalRedirect("//evil.com")).toBeUndefined();
+		expect(sanitizeInternalRedirect("/\\evil.com")).toBeUndefined();
+		expect(sanitizeInternalRedirect("/\\\\evil.com")).toBeUndefined();
 		expect(sanitizeInternalRedirect("https://evil.com")).toBeUndefined();
 		expect(sanitizeInternalRedirect("javascript:alert(1)")).toBeUndefined();
 		expect(sanitizeInternalRedirect("")).toBeUndefined();

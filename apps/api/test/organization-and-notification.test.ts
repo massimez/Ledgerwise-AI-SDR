@@ -9,8 +9,9 @@ import { transferOwnership } from "../src/modules/organization/service";
 
 function createQueryChain<T>(result: T) {
 	const chain = {
+		for: () => chain,
 		from: () => chain,
-		limit: () => Promise.resolve(result),
+		limit: () => chain,
 		returning: () => Promise.resolve(result),
 		set: () => chain,
 		// biome-ignore lint/suspicious/noThenProperty: test double emulates Drizzle awaitable builder

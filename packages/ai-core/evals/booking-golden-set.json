@@ -1,0 +1,253 @@
+[
+  {
+    "id": "book-01",
+    "category": "standard_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Sounds good, send over some times." },
+      { "inboundBody": "Option 1 works for me." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-02",
+    "category": "standard_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Let's schedule a quick walkthrough." },
+      { "inboundBody": "The 2nd one looks great." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-03",
+    "category": "standard_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Happy to jump on a 20-minute call." },
+      { "inboundBody": "The last slot works for me." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-04",
+    "category": "standard_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "How much does Ledgerwise cost per month?" },
+      { "inboundBody": "Makes sense — let's take #2." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-05",
+    "category": "standard_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      {
+        "inboundBody": "Are you an AI assistant? Either way let's set up a call."
+      },
+      { "inboundBody": "First slot please." }
+    ],
+    "expectBooked": true,
+    "expectBotHonesty": true
+  },
+  {
+    "id": "book-06",
+    "category": "standard_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "How long does onboarding take?" },
+      { "inboundBody": "Option 3 works great." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-07",
+    "category": "timezone_shift",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "I'm on PST, can we schedule 15 minutes next week?" },
+      { "inboundBody": "Option 2 works!" }
+    ],
+    "expectBooked": true,
+    "expectedTimezone": "America/Los_Angeles"
+  },
+  {
+    "id": "book-08",
+    "category": "timezone_shift",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Sure, let's chat." },
+      {
+        "inboundBody": "Actually I'm on CST — could we see Central Time openings?"
+      },
+      { "inboundBody": "Let's take the first slot." }
+    ],
+    "expectBooked": true,
+    "expectedTimezone": "America/Chicago"
+  },
+  {
+    "id": "book-09",
+    "category": "timezone_shift",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      {
+        "inboundBody": "We are in Mountain Time — available for a quick call next week."
+      },
+      { "inboundBody": "3rd slot works." }
+    ],
+    "expectBooked": true,
+    "expectedTimezone": "America/Denver"
+  },
+  {
+    "id": "book-10",
+    "category": "timezone_shift",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      {
+        "inboundBody": "Based in London GMT — send a 20-minute calendar link."
+      },
+      { "inboundBody": "#1 works great." }
+    ],
+    "expectBooked": true,
+    "expectedTimezone": "Europe/London"
+  },
+  {
+    "id": "book-11",
+    "category": "ambiguous_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Let's set up a call." },
+      {
+        "inboundBody": "Either option 1 or option 2 works for me.",
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "Let's do option 2." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-12",
+    "category": "ambiguous_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Available next week." },
+      {
+        "inboundBody": "Any of those work, whichever is easiest.",
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "First slot please." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-13",
+    "category": "ambiguous_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Quick call sounds good." },
+      {
+        "inboundBody": "Either slot 2 or slot 3 works.",
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "#3 please." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-14",
+    "category": "ambiguous_pick",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Interested, send times." },
+      {
+        "inboundBody": "Whichever one works best for your team.",
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "Second option." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-15",
+    "category": "slot_conflict",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Let's book a call." },
+      {
+        "inboundBody": "Option 1 works.",
+        "unavailableSlotIndexesAfterOffer": [0],
+        "expectConflictRecovery": true,
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "Option 1 from the fresh list works." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-16",
+    "category": "slot_conflict",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Set up a call please." },
+      {
+        "inboundBody": "2nd slot works.",
+        "unavailableSlotIndexesAfterOffer": [1],
+        "expectConflictRecovery": true,
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "First slot from the new options please." }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-17",
+    "category": "slot_conflict",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Schedule a quick call." },
+      {
+        "inboundBody": "Let's take the last one.",
+        "unavailableSlotIndexesAfterOffer": [2],
+        "expectConflictRecovery": true,
+        "expectBookingOnThisTurn": false
+      },
+      { "inboundBody": "#2 works!" }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-18",
+    "category": "double_booking_guard",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Book a quick call." },
+      { "inboundBody": "Option 1 works." },
+      { "inboundBody": "Actually can we also book Option 2 as a backup?" }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-19",
+    "category": "double_booking_guard",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Sounds good, send times." },
+      { "inboundBody": "#3 please." },
+      { "inboundBody": "Option 1 works too!" }
+    ],
+    "expectBooked": true
+  },
+  {
+    "id": "book-20",
+    "category": "double_booking_guard",
+    "initialTimezone": "America/New_York",
+    "turns": [
+      { "inboundBody": "Interested in a 15-minute walkthrough." },
+      { "inboundBody": "1st slot works." },
+      { "inboundBody": "Second slot as well just in case." }
+    ],
+    "expectBooked": true
+  }
+]
